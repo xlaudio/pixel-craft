@@ -1,0 +1,142 @@
+digraph PixelCraftArchitecture {
+    graph [
+        label="PixelCraft — Modular Architecture",
+        labelloc=t,
+        labeljust=c,
+        fontsize=25,
+        fontname="DejaVu Sans",
+        bgcolor="#ffffff",
+        pad=0.3,
+        nodesep=0.36,
+        ranksep=0.62,
+        splines=polyline,
+        outputorder=edgesfirst
+    ];
+    node [
+        shape=box,
+        style="rounded,filled",
+        fontname="DejaVu Sans",
+        fontsize=12,
+        color="#59636e",
+        penwidth=1.7,
+        margin="0.17,0.11"
+    ];
+    edge [
+        fontname="DejaVu Sans",
+        fontsize=10,
+        color="#66717d",
+        fontcolor="#39424c",
+        arrowsize=0.8,
+        penwidth=1.3
+    ];
+
+    main [
+        label="main.rs\nEntry point · eframe::App\nKeyboard shortcuts · UI orchestration",
+        fillcolor="#e8f5e9",
+        color="#45965a"
+    ];
+    model [
+        label="model.rs — Shared application state and data types\nPaintApp · Layer · Tool · ClipboardData · HistoryState",
+        fillcolor="#e6f3fb",
+        color="#4299c8"
+    ];
+
+    subgraph cluster_app {
+        label="app/ — Application logic";
+        fontname="DejaVu Sans";
+        fontsize=16;
+        color="#d5dde5";
+        style="rounded,filled";
+        fillcolor="#f8fafc";
+        margin=16;
+
+        app_mod [
+            label="mod.rs\nInitialization · theme\nNotifications · texture sync",
+            fillcolor="#fff3d6",
+            color="#d69c2f"
+        ];
+        history [
+            label="history.rs\nUndo / redo",
+            fillcolor="#fff8e6",
+            color="#d6aa52"
+        ];
+        document [
+            label="document.rs\nCanvas · layers · selection\nClipboard · transforms · compositing",
+            fillcolor="#fff8e6",
+            color="#d6aa52"
+        ];
+        tools [
+            label="tools.rs\nBrush · eraser · bucket · pipette\nLines · rectangles · ellipses",
+            fillcolor="#fff8e6",
+            color="#d6aa52"
+        ];
+        file_io [
+            label="file_io.rs\nImage import/export\nClipboard files",
+            fillcolor="#fff8e6",
+            color="#d6aa52"
+        ];
+        { rank=same; history; document; }
+        { rank=same; tools; file_io; }
+        app_mod -> history [style=invis, weight=3];
+        app_mod -> document [style=invis, weight=3];
+        history -> tools [style=invis, weight=3];
+        document -> file_io [style=invis, weight=3];
+    }
+
+    subgraph cluster_ui {
+        label="ui/ — egui interface";
+        fontname="DejaVu Sans";
+        fontsize=16;
+        color="#d5dde5";
+        style="rounded,filled";
+        fillcolor="#f8fafc";
+        margin=16;
+
+        ui_mod [
+            label="mod.rs\nExports UI components",
+            fillcolor="#f2eafb",
+            color="#8c5bb1"
+        ];
+        menu [
+            label="menu.rs\nFile · Edit · View · Image\nColors · Settings",
+            fillcolor="#f8effb",
+            color="#a173bd"
+        ];
+        panels [
+            label="panels.rs\nTools · layers · two-row palette",
+            fillcolor="#f8effb",
+            color="#a173bd"
+        ];
+        canvas [
+            label="canvas.rs\nRendering · mouse input\nZoom/pan · previews · overlays",
+            fillcolor="#f8effb",
+            color="#a173bd"
+        ];
+        { rank=same; menu; panels; canvas; }
+        ui_mod -> menu [style=invis, weight=3];
+        ui_mod -> panels [style=invis, weight=3];
+        ui_mod -> canvas [style=invis, weight=3];
+    }
+
+    { rank=min; main; }
+    main -> app_mod [label="mod app"];
+    main -> ui_mod [label="mod ui"];
+    main -> model [label="mod model"];
+    app_mod -> history [label="mod"];
+    app_mod -> document [label="mod"];
+    app_mod -> tools [label="mod"];
+    app_mod -> file_io [label="mod"];
+    ui_mod -> menu [label="mod"];
+    ui_mod -> panels [label="mod"];
+    ui_mod -> canvas [label="mod"];
+
+    footer [
+        shape=plain,
+        style="",
+        fontsize=11,
+        label="UI components call PaintApp methods implemented across app/*; app and ui share the data types in model.rs."
+    ];
+    { rank=max; footer; }
+    file_io -> footer [style=invis, weight=2];
+    canvas -> footer [style=invis, weight=2];
+}
