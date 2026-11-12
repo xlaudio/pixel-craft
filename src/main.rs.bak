@@ -1,0 +1,410 @@
+//! # main.rs.bak — Backup della versione monolitica precedente
+//!
+//! Copia storica del prototipo in cui stato, strumenti e interfaccia erano
+//! definiti in un unico file. Non è compilato: l'applicazione usa `main.rs`
+//! e i moduli correnti sotto `app/` e `ui/`.
+
+use eframe::egui;
+use egui::{Color32, ColorImage, Pos2, Rect, Sense, TextureHandle, TextureOptions, Vec2};
+
+// --- MODELLO DATI PER I LIVELLI ---
+pub struct Layer {
+    pub name: String,
+    pub visible: bool,
+    pub opacity: f32, // da 0.0 a 1.0
+    pub pixels: Vec<Color32>,
+}
+
+impl Layer {
+    pub fn new(name: &str, width: usize, height: usize) -> Self {
+        Self {
+            name: name.to_string(),
+            visible: true,
+            opacity: 1.0,
+            pixels: vec![Color32::TRANSPARENT; width * height],
+        }
+    }
+}
+
+// --- STRUMENTI DI DISEGNO ---
+#[derive(PartialEq)]
+pub enum Tool {
+    Brush,
+    Eraser,
+}
+
+// --- STATO DELL'APPLICAZIONE ---
+pub struct PaintApp {
+    width: usize,
+    height: usize,
+    layers: Vec<Layer>,
+    active_layer_idx: usize,
+
+    // Proprietà dello strumento corrente
+    current_tool: Tool,
+    brush_color: Color32,
+    brush_size: f32,
+
+    // Texture per il rendering su schermo
+    canvas_texture: Option<TextureHandle>,
+    last_pos: Option<Pos2>,
+}
+
+impl PaintApp {
+
+        pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+            // 1. Forziamo il tema scuro e lo personalizziamo con la palette KDE Breeze Dark
+            let mut visuals = egui::Visuals::dark();
+            visuals.window_fill = egui::Color32::from_rgb(135, 138, 141);      // #232629 - Sfondo finestre KDE
+            visuals.panel_fill = egui::Color32::from_rgb(149, 154, 159);       // #31363b - Sfondo pannelli/sidebar
+            visuals.extreme_bg_color = egui::Color32::from_rgb(23, 26, 29); // Sfondo aree interne/input
+            cc.egui_ctx.set_visuals(visuals);
+
+            // 2. Inizializzazione dello stato e dei livelli
+            let width = 800;
+            let height = 600;
+
+            let mut bg_layer = Layer::new("Sfondo", width, height);
+            bg_layer.pixels.fill(Color32::WHITE); // Sfondo bianco della tela
+            let draw_layer = Layer::new("Livello 1", width, height);
+
+            // Creiamo una texture vuota iniziale per il canvas
+            let canvas_texture = cc.egui_ctx.load_texture(
+                "canvas_texture",
+                egui::ColorImage::new([width, height], egui::Color32::TRANSPARENT),
+                                                          egui::TextureOptions::default(),
+            );
+
+            Self {
+                width,
+                height,
+                layers: vec![bg_layer, draw_layer],
+                active_layer_idx: 1,
+                current_tool: Tool::Brush,
+                brush_size: 16.0,
+                brush_color: Color32::from_rgb(200, 50, 50),
+                canvas_texture: Some(canvas_texture), // <--- Avvolto in Some()
+                last_pos: None,
+            }
+        }
+        // ... resto dei metodi (composite, save_to_png, load_from_png, ecc.)
+
+    // Crea un nuovo canvas pulito
+    pub fn new_canvas(&mut self) {
+        let mut bg_layer = Layer::new("Sfondo", self.width, self.height);
+        bg_layer.pixels.fill(Color32::WHITE);
+        let draw_layer = Layer::new("Livello 1", self.width, self.height);
+
+        self.layers = vec![bg_layer, draw_layer];
+        self.active_layer_idx = 1;
+    }
+    // Algoritmo di Composizione (Blending dei Livelli su CPU)
+    fn composite(&self) -> ColorImage {
+        let mut final_pixels = vec![Color32::from_rgb(200, 200, 200); self.width * self.height];
+
+        // Disegna una griglia trasparente a scacchi come sfondo base
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let is_check = ((x / 10) + (y / 10)) % 2 == 0;
+                let check_color = if is_check { Color32::from_gray(240) } else { Color32::WHITE };
+                final_pixels[y * self.width + x] = check_color;
+            }
+        }
+
+        // Sovrappone i livelli visibili partendo dal basso
+        for layer in &self.layers {
+            if !layer.visible || layer.opacity <= 0.0 {
+                continue;
+            }
+
+            for (i, p) in layer.pixels.iter().enumerate() {
+                if p.a() == 0 {
+                    continue;
+                }
+
+                let src_alpha = (p.a() as f32 / 255.0) * layer.opacity;
+                if src_alpha <= 0.0 {
+                    continue;
+                }
+
+                let dst = &mut final_pixels[i];
+                let inv_alpha = 1.0 - src_alpha;
+
+                // Simple Alpha Blending
+                let r = (p.r() as f32 * src_alpha + dst.r() as f32 * inv_alpha) as u8;
+                let g = (p.g() as f32 * src_alpha + dst.g() as f32 * inv_alpha) as u8;
+                let b = (p.b() as f32 * src_alpha + dst.b() as f32 * inv_alpha) as u8;
+
+                *dst = Color32::from_rgb(r, g, b);
+            }
+        }
+
+        ColorImage::from_rgba_unmultiplied(
+            [self.width, self.height],
+            bytemuck::cast_slice(&final_pixels),
+        )
+    }
+
+    // Carica un'immagine PNG e la mette su un nuovo livello
+    pub fn load_from_png(&mut self, path: &str) {
+        match image::open(path) {
+            Ok(img) => {
+                let rgba = img.to_rgba8();
+                let (w, h) = rgba.dimensions();
+
+                // Se le dimensioni differiscono, potremmo ridimensionare o adattare.
+                // Per ora creiamo un livello con i pixel caricati:
+                let mut new_layer = Layer::new(&format!("Importato: {}", path), w as usize, h as usize);
+
+                for (i, pixel) in rgba.pixels().enumerate() {
+                    if i < new_layer.pixels.len() {
+                        new_layer.pixels[i] = Color32::from_rgba_unmultiplied(
+                            pixel[0], pixel[1], pixel[2], pixel[3]
+                        );
+                    }
+                }
+
+                self.width = w as usize;
+                self.height = h as usize;
+                self.layers.push(new_layer);
+                self.active_layer_idx = self.layers.len() - 1;
+                println!("Immagine caricata con successo da: {}", path);
+            }
+            Err(e) => eprintln!("Errore durante il caricamento dell'immagine: {}", e),
+        }
+    }
+
+    // Funzione per salvare il canvas attuale su file PNG
+    pub fn save_to_png(&self, path: &str) {
+        // Riutilizziamo la logica di composizione per ottenere i pixel finali
+        let img_data = self.composite();
+
+        // Salvataggio tramite la crate 'image'
+        if let Err(e) = image::save_buffer(
+            path,
+            img_data.as_raw(),
+                                           self.width as u32,
+                                           self.height as u32,
+                                           image::ColorType::Rgba8,
+        ) {
+            eprintln!("Errore durante il salvataggio dell'immagine: {}", e);
+        } else {
+            println!("Immagine salvata con successo in: {}", path);
+        }
+    }
+    // Applica il pennello o la gomma sul livello attivo
+    fn draw_at(&mut self, pos: Pos2, rect: Rect) {
+        if self.layers.is_empty() {
+            return;
+        }
+
+        // Converti le coordinate della GUI nelle coordinate dei pixel dell'immagine
+        let rel_x = (pos.x - rect.min.x) / rect.width() * (self.width as f32);
+        let rel_y = (pos.y - rect.min.y) / rect.height() * (self.height as f32);
+
+        let layer = &mut self.layers[self.active_layer_idx];
+        let radius = (self.brush_size / 2.0) as i32;
+        let cx = rel_x as i32;
+        let cy = rel_y as i32;
+
+        let target_color = match self.current_tool {
+            Tool::Brush => self.brush_color,
+            Tool::Eraser => Color32::TRANSPARENT,
+        };
+
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                if dx * dx + dy * dy <= radius * radius {
+                    let px = cx + dx;
+                    let py = cy + dy;
+
+                    if px >= 0 && px < self.width as i32 && py >= 0 && py < self.height as i32 {
+                        let idx = (py as usize) * self.width + (px as usize);
+                        layer.pixels[idx] = target_color;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- INTERFACCIA UTENTE (EGUI) ---
+impl eframe::App for PaintApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
+
+
+        // 0. Barra dei Menu in alto
+        // 0. Barra dei Menu in alto
+        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("📄 Nuovo").clicked() {
+                        self.new_canvas();
+                        ui.close_menu();
+                    }
+                    if ui.button("📂 Apri...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Immagini PNG", &["png", "jpg", "jpeg"])
+                            .pick_file()
+                            {
+                                if let Some(path_str) = path.to_str() {
+                                    self.load_from_png(path_str);
+                                }
+                            }
+                            ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("💾 Salva").clicked() {
+                        self.save_to_png("output.png");
+                        ui.close_menu();
+                    }
+                    if ui.button("💾 Salva con nome...").clicked() {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Immagine PNG", &["png"])
+                            .save_file()
+                            {
+                                if let Some(path_str) = path.to_str() {
+                                    self.save_to_png(path_str);
+                                }
+                            }
+                            ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("🚪 Esci").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+            });
+        });
+
+        // 1. Pannello Strumenti (A Sinistra)
+        egui::SidePanel::left("tools_panel").show(ctx, |ui| {
+            ui.heading("Strumenti");
+            ui.separator();
+
+            ui.radio_value(&mut self.current_tool, Tool::Brush, "✏️ Pennello");
+            ui.radio_value(&mut self.current_tool, Tool::Eraser, "🧹 Gomma");
+
+            ui.add_space(10.0);
+            ui.label("Dimensione:");
+            ui.add(egui::Slider::new(&mut self.brush_size, 1.0..=50.0));
+
+            if self.current_tool == Tool::Brush {
+                ui.add_space(10.0);
+                ui.label("Colore:");
+                let mut rgb = [
+                    self.brush_color.r(),
+                                                  self.brush_color.g(),
+                                                  self.brush_color.b(),
+                ];
+                if ui.color_edit_button_srgb(&mut rgb).changed() {
+                    self.brush_color = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                }
+            }
+        });
+
+
+
+        // 2. Pannello Livelli (A Destra)
+        egui::SidePanel::right("layers_panel").show(ctx, |ui| {
+            ui.heading("Livelli");
+            if ui.button("➕ Nuovo Livello").clicked() {
+                let name = format!("Livello {}", self.layers.len());
+                self.layers.push(Layer::new(&name, self.width, self.height));
+                self.active_layer_idx = self.layers.len() - 1;
+            }
+            ui.separator();
+
+            let  to_delete = None;
+            // 2. Pannello Livelli (A Destra)
+            egui::SidePanel::right("layers_panel").show(ctx, |ui| {
+                ui.heading("Livelli");
+                if ui.button("➕ Nuovo Livello").clicked() {
+                    let name = format!("Livello {}", self.layers.len());
+                    self.layers.push(Layer::new(&name, self.width, self.height));
+                    self.active_layer_idx = self.layers.len() - 1;
+                }
+                ui.separator();
+
+                let  mut to_delete = None;
+                let layers_len = self.layers.len(); // <--- Estraggo la lunghezza prima del ciclo
+
+                for (idx, layer) in self.layers.iter_mut().enumerate().rev() {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut layer.visible, "");
+
+                        let selected = self.active_layer_idx == idx;
+                        if ui.selectable_label(selected, &layer.name).clicked() {
+                            self.active_layer_idx = idx;
+                        }
+
+                        // Usiamo 'layers_len' invece di 'self.layers.len()'
+                        if layers_len > 1 && ui.small_button("🗑").clicked() {
+                            to_delete = Some(idx);
+                        }
+                    });
+
+                    ui.add(egui::Slider::new(&mut layer.opacity, 0.0..=1.0).text("Opacità"));
+                    ui.separator();
+                }
+
+                if let Some(idx) = to_delete {
+                    self.layers.remove(idx);
+                    if self.active_layer_idx >= self.layers.len() {
+                        self.active_layer_idx = self.layers.len() - 1;
+                    }
+                }
+            });
+
+            if let Some(idx) = to_delete {
+                self.layers.remove(idx);
+                if self.active_layer_idx >= self.layers.len() {
+                    self.active_layer_idx = self.layers.len() - 1;
+                }
+            }
+        });
+
+        // 3. Area di Disegno Centrale (Canvas)
+        egui::CentralPanel::default().show(ctx, |ui| {
+            let img_data = self.composite();
+
+            // Aggiorna la texture visualizzata
+            let texture = self.canvas_texture.get_or_insert_with(|| {
+                ui.ctx().load_texture("canvas", img_data.clone(), TextureOptions::NEAREST)
+            });
+            texture.set(img_data, TextureOptions::NEAREST);
+
+            // Calcola la dimensione del canvas per mantenere le proporzioni
+            let canvas_size = Vec2::new(self.width as f32, self.height as f32);
+            let (rect, response) = ui.allocate_exact_size(canvas_size, Sense::drag());
+
+            // Disegna l'immagine composita
+            ui.painter().image(
+                texture.id(),
+                               rect,
+                               Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                               Color32::WHITE,
+            );
+
+            // Gestione dell'Input Mouse (Disegno)
+            if response.dragged() || response.clicked() {
+                if let Some(pointer_pos) = response.interact_pointer_pos() {
+                    self.draw_at(pointer_pos, rect);
+                    self.last_pos = Some(pointer_pos);
+                }
+            } else {
+                self.last_pos = None;
+            }
+        });
+    }
+}
+
+fn main() -> Result<(), eframe::Error> {
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Rust Paint - KDE Native Style",
+        options,
+        Box::new(|cc| Box::new(PaintApp::new(cc))), // <--- Passiamo il context qui
+    )
+}
