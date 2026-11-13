@@ -267,6 +267,42 @@ impl PaintApp {
         }
     }
 
+    pub fn merge_layers_down(&mut self, index: usize) {
+        if index == 0 || index >= self.layers.len() {
+            return;
+        }
+
+        self.push_undo_snapshot();
+        let mut pixels = vec![Color32::TRANSPARENT; self.width * self.height];
+        for layer in &self.layers[..=index] {
+            if !layer.visible || layer.opacity <= 0.0 {
+                continue;
+            }
+            for (destination, &source) in pixels.iter_mut().zip(&layer.pixels) {
+                *destination = composite_pixel(*destination, source, layer.opacity);
+            }
+        }
+
+        let name = format!("{} (Fusi)", self.layers[index].name);
+        self.layers.drain(..=index);
+        self.layers.insert(
+            0,
+            Layer {
+                name,
+                visible: true,
+                opacity: 1.0,
+                pixels,
+            },
+        );
+        self.active_layer_idx = if self.active_layer_idx > index {
+            self.active_layer_idx - index
+        } else {
+            0
+        };
+        self.dirty_canvas = true;
+        self.show_notice("Livelli sottostanti fusi");
+    }
+
     pub fn delete_selection(&mut self) {
         if let Some((x0, y0, x1, y1)) = self.get_selection_bounds() {
             self.push_undo_snapshot();
@@ -487,36 +523,10 @@ impl PaintApp {
 
             if idx == 0 && is_full_opacity && first_layer_opaque {
                 final_pixels[..count].copy_from_slice(&layer.pixels[..count]);
-            } else if is_full_opacity {
-                for (i, &p) in layer.pixels.iter().take(count).enumerate() {
-                    let alpha = p.a();
-                    if alpha == 255 {
-                        final_pixels[i] = p;
-                    } else if alpha > 0 {
-                        let a = alpha as u32;
-                        let inv_a = 255 - a;
-                        let dst = final_pixels[i];
-                        let r = ((p.r() as u32 * a + dst.r() as u32 * inv_a) / 255) as u8;
-                        let g = ((p.g() as u32 * a + dst.g() as u32 * inv_a) / 255) as u8;
-                        let b = ((p.b() as u32 * a + dst.b() as u32 * inv_a) / 255) as u8;
-                        final_pixels[i] = Color32::from_rgb(r, g, b);
-                    }
-                }
             } else {
-                let layer_alpha = (layer.opacity * 255.0) as u32;
-                for (i, &p) in layer.pixels.iter().take(count).enumerate() {
-                    if p.a() > 0 {
-                        let a = (p.a() as u32 * layer_alpha) / 255;
-                        if a == 0 {
-                            continue;
-                        }
-                        let inv_a = 255 - a;
-                        let dst = final_pixels[i];
-                        let r = ((p.r() as u32 * a + dst.r() as u32 * inv_a) / 255) as u8;
-                        let g = ((p.g() as u32 * a + dst.g() as u32 * inv_a) / 255) as u8;
-                        let b = ((p.b() as u32 * a + dst.b() as u32 * inv_a) / 255) as u8;
-                        final_pixels[i] = Color32::from_rgb(r, g, b);
-                    }
+                for (destination, &source) in final_pixels.iter_mut().take(count).zip(&layer.pixels)
+                {
+                    *destination = composite_pixel(*destination, source, layer.opacity);
                 }
             }
         }
@@ -526,6 +536,36 @@ impl PaintApp {
             bytemuck::cast_slice(&final_pixels),
         )
     }
+}
+
+fn composite_pixel(destination: Color32, source: Color32, opacity: f32) -> Color32 {
+    let [source_red, source_green, source_blue, source_alpha] = source.to_srgba_unmultiplied();
+    let [destination_red, destination_green, destination_blue, destination_alpha] =
+        destination.to_srgba_unmultiplied();
+    let source_alpha = source_alpha as f32 / 255.0 * opacity.clamp(0.0, 1.0);
+    if source_alpha <= 0.0 {
+        return destination;
+    }
+
+    let destination_alpha = destination_alpha as f32 / 255.0;
+    let output_alpha = source_alpha + destination_alpha * (1.0 - source_alpha);
+    if output_alpha <= 0.0 {
+        return Color32::TRANSPARENT;
+    }
+
+    let blend_channel = |source: u8, destination: u8| {
+        ((source as f32 * source_alpha
+            + destination as f32 * destination_alpha * (1.0 - source_alpha))
+            / output_alpha)
+            .round() as u8
+    };
+
+    Color32::from_rgba_unmultiplied(
+        blend_channel(source_red, destination_red),
+        blend_channel(source_green, destination_green),
+        blend_channel(source_blue, destination_blue),
+        (output_alpha * 255.0).round() as u8,
+    )
 }
 
 #[cfg(test)]
@@ -583,6 +623,64 @@ mod tests {
             Color32::TRANSPARENT
         );
         assert_eq!(app.get_selection_bounds(), Some((8, 9, 10, 10)));
+    }
+
+    #[test]
+    fn copying_a_selection_then_pasting_creates_a_new_layer() {
+        let mut app = PaintApp::new_headless();
+        let original_layer_count = app.layers.len();
+        let copied_color = Color32::from_rgb(25, 100, 200);
+        app.layers[app.active_layer_idx].pixels[4 * app.width + 3] = copied_color;
+        app.selection = Some(Rect::from_min_size(
+            Pos2::new(3.0, 4.0),
+            Vec2::new(1.0, 1.0),
+        ));
+
+        app.copy_selection();
+        app.paste();
+
+        assert_eq!(app.layers.len(), original_layer_count + 1);
+        assert_eq!(app.active_layer_idx, original_layer_count);
+        assert_eq!(
+            app.layers[app.active_layer_idx].pixels[4 * app.width + 3],
+            copied_color
+        );
+        assert_eq!(app.get_selection_bounds(), Some((3, 4, 4, 5)));
+    }
+
+    #[test]
+    fn merge_layers_down_flattens_selected_and_lower_layers_only() {
+        use crate::model::Layer;
+
+        let mut app = PaintApp::new_headless();
+        let pixel_count = app.width * app.height;
+        let mut bottom = Layer::new("Fondo", app.width, app.height);
+        bottom.pixels.fill(Color32::from_rgb(255, 0, 0));
+        let mut middle = Layer::new("Centro", app.width, app.height);
+        middle.pixels.fill(Color32::from_rgb(0, 255, 0));
+        let mut selected = Layer::new("Selezionato", app.width, app.height);
+        selected
+            .pixels
+            .fill(Color32::from_rgba_unmultiplied(0, 0, 255, 128));
+        let mut upper = Layer::new("Superiore", app.width, app.height);
+        upper.pixels.fill(Color32::from_rgb(255, 255, 0));
+        app.layers = vec![bottom, middle, selected, upper];
+        app.active_layer_idx = 3;
+        app.layers[2].opacity = 1.0;
+
+        app.merge_layers_down(2);
+
+        assert_eq!(app.layers.len(), 2);
+        assert_eq!(app.layers[0].name, "Selezionato (Fusi)");
+        assert_eq!(app.layers[0].pixels.len(), pixel_count);
+        assert_eq!(app.layers[0].pixels[0], Color32::from_rgb(0, 127, 128));
+        assert_eq!(app.layers[1].name, "Superiore");
+        assert_eq!(app.active_layer_idx, 1);
+        assert!(app.dirty_canvas);
+
+        app.undo();
+        assert_eq!(app.layers.len(), 4);
+        assert_eq!(app.layers[2].name, "Selezionato");
     }
 
     #[test]

@@ -133,7 +133,11 @@ pub fn show_menu_edit(app: &mut PaintApp, ui: &mut egui::Ui) {
             ui.close_menu();
         }
         if menu_action_button(ui, can_paste, "📋", "Paste as New Layer", "Ctrl+V").clicked() {
-            app.execute_command(Command::PasteFromSystemClipboard);
+            app.execute_command(if app.clipboard.is_some() {
+                Command::Paste
+            } else {
+                Command::PasteFromSystemClipboard
+            });
             ui.close_menu();
         }
         if menu_action_button(

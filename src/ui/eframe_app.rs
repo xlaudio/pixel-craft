@@ -19,16 +19,20 @@ impl eframe::App for PaintApp {
             {
                 self.execute_command(Command::Redo);
             }
-            if i.modifiers.command && i.key_pressed(Key::X) && self.has_selection() {
+            if i.modifiers.ctrl && i.key_pressed(Key::X) && self.has_selection() {
                 self.execute_command(Command::CutSelection);
             }
-            if i.modifiers.command && i.key_pressed(Key::C) && self.has_selection() {
+            if i.modifiers.ctrl && i.key_pressed(Key::C) && self.has_selection() {
                 self.execute_command(Command::CopySelection);
             }
-            if i.modifiers.command && i.key_pressed(Key::V) && !i.modifiers.shift {
-                self.execute_command(Command::PasteFromSystemClipboard);
+            if i.modifiers.ctrl && i.key_pressed(Key::V) && !i.modifiers.shift {
+                self.execute_command(if self.clipboard.is_some() {
+                    Command::Paste
+                } else {
+                    Command::PasteFromSystemClipboard
+                });
             }
-            if i.modifiers.command
+            if i.modifiers.ctrl
                 && i.modifiers.shift
                 && i.key_pressed(Key::V)
                 && self.clipboard.is_some()

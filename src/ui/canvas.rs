@@ -126,13 +126,13 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
             app.execute_command(Command::PanBy(response.drag_delta().into()));
         }
 
-        // 2. La rotellina zooma a passi del 20%; lo scroll orizzontale sposta la vista.
-        let scroll_delta = ctx.input(|i| i.raw_scroll_delta);
-        if response.hovered() && (scroll_delta.x != 0.0 || scroll_delta.y != 0.0) {
-            if scroll_delta.y != 0.0 {
+        // 2. egui converts Ctrl+wheel into a Zoom event; normal wheel stays a Scroll event.
+        let (scroll_delta, zoom_delta, ctrl_pressed) =
+            ctx.input(|i| (i.raw_scroll_delta, i.zoom_delta(), i.modifiers.ctrl));
+        if response.hovered() {
+            if ctrl_pressed && zoom_delta != 1.0 {
                 let old_zoom = app.zoom;
-                let zoom_step = if scroll_delta.y > 0.0 { 0.2 } else { -0.2 };
-                let new_zoom = (old_zoom + zoom_step).clamp(0.05, 30.0);
+                let new_zoom = (old_zoom * zoom_delta).clamp(0.05, 30.0);
 
                 if let Some(hover_pos) = response.hover_pos() {
                     let old_canvas_center = response.rect.center() + app.pan;
@@ -142,7 +142,12 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
                 }
                 app.execute_command(Command::SetZoom(new_zoom));
             }
-            app.execute_command(Command::PanBy(Vec2::new(scroll_delta.x, 0.0).into()));
+            let vertical_pan = if ctrl_pressed { 0.0 } else { scroll_delta.y };
+            if scroll_delta.x != 0.0 || vertical_pan != 0.0 {
+                app.execute_command(Command::PanBy(
+                    Vec2::new(scroll_delta.x, vertical_pan).into(),
+                ));
+            }
         }
         max_pan = Vec2::new(
             ((app.width as f32 * app.zoom - viewport_size.x) / 2.0).max(0.0),

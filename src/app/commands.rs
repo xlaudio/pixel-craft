@@ -107,6 +107,7 @@ pub enum Command {
     ClearActiveLayer,
     CreateLayer,
     DuplicateActiveLayer,
+    MergeLayersDown(usize),
     DeleteLayer(usize),
     MoveLayerUp(usize),
     MoveLayerDown(usize),
@@ -215,6 +216,7 @@ impl CommandEngine {
                     app.dirty_canvas = true;
                 }
             }
+            Command::MergeLayersDown(index) => app.merge_layers_down(index),
             Command::DeleteLayer(index) => {
                 if app.layers.len() > 1 && index < app.layers.len() {
                     app.push_undo_snapshot();

@@ -9,6 +9,7 @@
 //!   slider per la dimensione del pennello e indicazioni sulla navigazione.
 //! - [`show_layers_panel`] — **Pannello destro**: lista dei livelli con controlli
 //!   visibilità, opacità, riordinamento (↑↓), duplicazione ed eliminazione.
+//!   Consente anche di fondere il livello selezionato con quelli sottostanti.
 //!   Le azioni sui livelli vengono applicate fuori dal loop di borrow mutabile
 //!   per evitare conflitti con il borrow checker di Rust.
 //! - [`show_palette_panel`] — **Pannello inferiore**: tavolozza rapida su due righe;
@@ -435,6 +436,16 @@ pub fn show_layers_panel(app: &mut PaintApp, ctx: &egui::Context) {
                                                 .clicked()
                                         {
                                             move_down = Some(idx);
+                                        }
+                                        if idx > 0
+                                            && ui
+                                                .small_button("⇩")
+                                                .on_hover_text(
+                                                    "Fondi questo livello e tutti quelli sottostanti",
+                                                )
+                                                .clicked()
+                                        {
+                                            commands.push(Command::MergeLayersDown(idx));
                                         }
                                         if idx + 1 < layers_len
                                             && ui
