@@ -3,15 +3,15 @@
 use eframe::egui;
 use egui::{Color32, Vec2};
 
+use super::eframe_app::{ColorDialogTarget, EframeApp};
 use crate::app::Command;
-use crate::model::{ColorDialogTarget, PaintApp};
 
-pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
+pub fn show_document_dialogs(app: &mut EframeApp, ctx: &egui::Context) {
     const MAX_DIMENSION: usize = 16_384;
     const MAX_PIXELS: usize = 100_000_000;
 
-    if app.show_new_image_dialog {
-        let mut open = app.show_new_image_dialog;
+    if app.ui.show_new_image_dialog {
+        let mut open = app.ui.show_new_image_dialog;
         let mut create_requested = false;
         let mut cancel_requested = false;
         egui::Window::new("Nuova immagine")
@@ -33,11 +33,12 @@ pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
                     );
                 });
                 ui.add_space(6.0);
-                dimension_input(ui, "Larghezza:", &mut app.new_image_width, MAX_DIMENSION);
-                dimension_input(ui, "Altezza:", &mut app.new_image_height, MAX_DIMENSION);
+                dimension_input(ui, "Larghezza:", &mut app.ui.new_image_width, MAX_DIMENSION);
+                dimension_input(ui, "Altezza:", &mut app.ui.new_image_height, MAX_DIMENSION);
                 let dimensions_valid = app
+                    .ui
                     .new_image_width
-                    .checked_mul(app.new_image_height)
+                    .checked_mul(app.ui.new_image_height)
                     .is_some_and(|pixels| pixels <= MAX_PIXELS);
                 if !dimensions_valid {
                     ui.colored_label(Color32::RED, "La tela non può superare 100 megapixel.");
@@ -47,17 +48,17 @@ pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
                 (create_requested, cancel_requested) =
                     dialog_actions(ui, "Crea", dimensions_valid);
             });
-        app.show_new_image_dialog = open && !cancel_requested && !create_requested;
+        app.ui.show_new_image_dialog = open && !cancel_requested && !create_requested;
         if create_requested {
             app.execute_command(Command::NewCanvas {
-                width: app.new_image_width,
-                height: app.new_image_height,
+                width: app.ui.new_image_width,
+                height: app.ui.new_image_height,
             });
         }
     }
 
-    if app.show_resize_image_dialog {
-        let mut open = app.show_resize_image_dialog;
+    if app.ui.show_resize_image_dialog {
+        let mut open = app.ui.show_resize_image_dialog;
         let original_ratio = app.width as f64 / app.height as f64;
         let mut resize_requested = false;
         let mut cancel_requested = false;
@@ -84,24 +85,25 @@ pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
                 });
                 ui.add_space(6.0);
                 let width_changed =
-                    dimension_input(ui, "Larghezza:", &mut app.resize_image_width, MAX_DIMENSION);
-                if width_changed && app.lock_resize_aspect_ratio {
-                    app.resize_image_height = ((app.resize_image_width as f64 / original_ratio)
+                    dimension_input(ui, "Larghezza:", &mut app.ui.resize_image_width, MAX_DIMENSION);
+                if width_changed && app.ui.lock_resize_aspect_ratio {
+                    app.ui.resize_image_height = ((app.ui.resize_image_width as f64 / original_ratio)
                         .round() as usize)
                         .clamp(1, MAX_DIMENSION);
                 }
                 let height_changed =
-                    dimension_input(ui, "Altezza:", &mut app.resize_image_height, MAX_DIMENSION);
-                if height_changed && app.lock_resize_aspect_ratio {
-                    app.resize_image_width = ((app.resize_image_height as f64 * original_ratio)
+                    dimension_input(ui, "Altezza:", &mut app.ui.resize_image_height, MAX_DIMENSION);
+                if height_changed && app.ui.lock_resize_aspect_ratio {
+                    app.ui.resize_image_width = ((app.ui.resize_image_height as f64 * original_ratio)
                         .round() as usize)
                         .clamp(1, MAX_DIMENSION);
                 }
                 ui.add_space(4.0);
-                ui.checkbox(&mut app.lock_resize_aspect_ratio, "Mantieni proporzioni");
+                ui.checkbox(&mut app.ui.lock_resize_aspect_ratio, "Mantieni proporzioni");
                 let dimensions_valid = app
+                    .ui
                     .resize_image_width
-                    .checked_mul(app.resize_image_height)
+                    .checked_mul(app.ui.resize_image_height)
                     .is_some_and(|pixels| pixels <= MAX_PIXELS);
                 if !dimensions_valid {
                     ui.colored_label(Color32::RED, "La tela non può superare 100 megapixel.");
@@ -111,17 +113,17 @@ pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
                 (resize_requested, cancel_requested) =
                     dialog_actions(ui, "Ridimensiona", dimensions_valid);
             });
-        app.show_resize_image_dialog = open && !cancel_requested && !resize_requested;
+        app.ui.show_resize_image_dialog = open && !cancel_requested && !resize_requested;
         if resize_requested {
             app.execute_command(Command::ResizeCanvas {
-                width: app.resize_image_width,
-                height: app.resize_image_height,
+                width: app.ui.resize_image_width,
+                height: app.ui.resize_image_height,
             });
         }
     }
 
-    if app.show_print_dialog {
-        let mut open = app.show_print_dialog;
+    if app.ui.show_print_dialog {
+        let mut open = app.ui.show_print_dialog;
         let mut print_requested = false;
         let mut cancel_requested = false;
         egui::Window::new("Stampa immagine")
@@ -162,18 +164,20 @@ pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     ui.label("File di output:");
                     ui.add(
-                        egui::TextEdit::singleline(&mut app.print_output_path).desired_width(310.0),
+                        egui::TextEdit::singleline(&mut app.ui.print_output_path)
+                            .desired_width(310.0),
                     );
                     if ui.button("Sfoglia...").clicked() {
                         let mut dialog = rfd::FileDialog::new()
                             .add_filter("Documento PDF", &["pdf"])
                             .set_file_name("immagine.pdf");
-                        if let Some(parent) = std::path::Path::new(&app.print_output_path).parent()
+                        if let Some(parent) =
+                            std::path::Path::new(&app.ui.print_output_path).parent()
                         {
                             dialog = dialog.set_directory(parent);
                         }
                         if let Some(path) = dialog.save_file() {
-                            app.print_output_path = path.to_string_lossy().into_owned();
+                            app.ui.print_output_path = path.to_string_lossy().into_owned();
                         }
                     }
                 });
@@ -181,21 +185,21 @@ pub fn show_document_dialogs(app: &mut PaintApp, ctx: &egui::Context) {
                 ui.separator();
                 (print_requested, cancel_requested) = dialog_actions(ui, "Stampa", true);
             });
-        app.show_print_dialog = open && !cancel_requested && !print_requested;
+        app.ui.show_print_dialog = open && !cancel_requested && !print_requested;
         if print_requested {
-            if app.print_output_path.trim().is_empty() {
+            if app.ui.print_output_path.trim().is_empty() {
                 app.show_notice("Specifica il percorso del file PDF.");
-                app.show_print_dialog = true;
+                app.ui.show_print_dialog = true;
             } else {
-                let path = app.print_output_path.clone();
+                let path = app.ui.print_output_path.clone();
                 app.execute_command(Command::SavePdf(path));
             }
         }
     }
 }
 
-pub fn show_color_dialog(app: &mut PaintApp, ctx: &egui::Context) {
-    let Some(target) = app.color_dialog_target else {
+pub fn show_color_dialog(app: &mut EframeApp, ctx: &egui::Context) {
+    let Some(target) = app.ui.color_dialog_target else {
         return;
     };
 
@@ -220,12 +224,12 @@ pub fn show_color_dialog(app: &mut PaintApp, ctx: &egui::Context) {
                         .num_columns(6)
                         .spacing([3.0, 3.0])
                         .show(ui, |ui| {
-                            for (index, color) in app.palette.iter().copied().enumerate() {
+                            for (index, color) in app.ui.palette.iter().copied().enumerate() {
                                 if ui
                                     .add_sized([22.0, 22.0], egui::Button::new("").fill(color))
                                     .clicked()
                                 {
-                                    app.color_dialog_color = color;
+                                    app.ui.color_dialog_color = color;
                                 }
                                 if index % 6 == 5 {
                                     ui.end_row();
@@ -236,7 +240,7 @@ pub fn show_color_dialog(app: &mut PaintApp, ctx: &egui::Context) {
                     ui.label("Anteprima");
                     egui::color_picker::show_color(
                         ui,
-                        app.color_dialog_color,
+                        app.ui.color_dialog_color,
                         Vec2::new(150.0, 48.0),
                     );
                 });
@@ -245,7 +249,7 @@ pub fn show_color_dialog(app: &mut PaintApp, ctx: &egui::Context) {
                 ui.vertical(|ui| {
                     egui::color_picker::color_picker_color32(
                         ui,
-                        &mut app.color_dialog_color,
+                        &mut app.ui.color_dialog_color,
                         egui::color_picker::Alpha::OnlyBlend,
                     );
                 });
@@ -260,16 +264,16 @@ pub fn show_color_dialog(app: &mut PaintApp, ctx: &egui::Context) {
 
     if accept_requested {
         match target {
-            ColorDialogTarget::Foreground => {
-                app.execute_command(Command::SetForegroundColor(app.color_dialog_color.into()))
-            }
-            ColorDialogTarget::Background => {
-                app.execute_command(Command::SetBackgroundColor(app.color_dialog_color.into()))
-            }
+            ColorDialogTarget::Foreground => app.execute_command(Command::SetForegroundColor(
+                app.ui.color_dialog_color.into(),
+            )),
+            ColorDialogTarget::Background => app.execute_command(Command::SetBackgroundColor(
+                app.ui.color_dialog_color.into(),
+            )),
         }
-        app.color_dialog_target = None;
+        app.ui.color_dialog_target = None;
     } else if cancel_requested || !open {
-        app.color_dialog_target = None;
+        app.ui.color_dialog_target = None;
     }
 }
 

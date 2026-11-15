@@ -8,7 +8,7 @@
 //! 2. **Zoom** — scroll della rotellina, centrato sul puntatore
 //! 3. **Scrollbar** — barre orizzontale e verticale quando la tela supera l'area visibile
 //! 4. **Texture** — aggiornamento GPU tramite `app.update_texture()`
-//!    (ricalcolata solo quando `dirty_canvas = true`)
+//!    (aggiornata quando cambia la revisione del documento)
 //! 5. **Input mouse** — ciclo drag_started → dragged → drag_stopped
 //!    per tutti gli strumenti (Select, Brush, Eraser, Pipette, Bucket,
 //!    Move, Line, Rectangle, Circle)
@@ -20,14 +20,18 @@
 use eframe::egui;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+use super::eframe_app::EframeApp;
 use crate::app::Command;
-use crate::model::{PaintApp, Tool};
+use crate::model::Tool;
 
-pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
+pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
     egui::CentralPanel::default().show(ctx, |ui| {
         const SCROLLBAR_SIZE: f32 = 14.0;
         let panel_rect = ui.available_rect_before_wrap();
-        let canvas_size = Vec2::new(app.width as f32 * app.zoom, app.height as f32 * app.zoom);
+        let canvas_size = Vec2::new(
+            app.width as f32 * app.ui.zoom,
+            app.height as f32 * app.ui.zoom,
+        );
         let mut show_horizontal = canvas_size.x > panel_rect.width();
         let mut show_vertical = canvas_size.y > panel_rect.height();
         for _ in 0..2 {
@@ -54,8 +58,8 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
             ((canvas_size.x - viewport_size.x) / 2.0).max(0.0),
             ((canvas_size.y - viewport_size.y) / 2.0).max(0.0),
         );
-        let mut pan_x = app.pan.x;
-        let mut pan_y = app.pan.y;
+        let mut pan_x = app.ui.pan.x;
+        let mut pan_y = app.ui.pan.y;
         if show_horizontal {
             let bar_rect = Rect::from_min_size(
                 Pos2::new(panel_rect.left(), panel_rect.bottom() - SCROLLBAR_SIZE),
@@ -87,15 +91,15 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
             );
         }
         let scrollbar_pan = Vec2::new(pan_x, pan_y);
-        if app.pan != scrollbar_pan {
-            app.execute_command(Command::SetPan(scrollbar_pan.into()));
+        if app.ui.pan != scrollbar_pan {
+            app.ui.pan = scrollbar_pan;
         }
         let clamped_pan = Vec2::new(
-            app.pan.x.clamp(-max_pan.x, max_pan.x),
-            app.pan.y.clamp(-max_pan.y, max_pan.y),
+            app.ui.pan.x.clamp(-max_pan.x, max_pan.x),
+            app.ui.pan.y.clamp(-max_pan.y, max_pan.y),
         );
-        if app.pan != clamped_pan {
-            app.execute_command(Command::SetPan(clamped_pan.into()));
+        if app.ui.pan != clamped_pan {
+            app.ui.pan = clamped_pan;
         }
 
         // 1. Gestione Pan con drag tasto centrale/destro o Spazio + Sinistro
@@ -103,13 +107,13 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
         let move_selection_hit = response
             .interact_pointer_pos()
             .and_then(|pos| {
-                let canvas_center = response.rect.center() + app.pan;
+                let canvas_center = response.rect.center() + app.ui.pan;
                 let canvas_rect = Rect::from_center_size(canvas_center, canvas_size);
                 app.selection.filter(|selection| {
                     canvas_rect.contains(pos)
                         && selection.contains(Pos2::new(
-                            (pos.x - canvas_rect.left()) / app.zoom,
-                            (pos.y - canvas_rect.top()) / app.zoom,
+                            (pos.x - canvas_rect.left()) / app.ui.zoom,
+                            (pos.y - canvas_rect.top()) / app.ui.zoom,
                         ))
                 })
             })
@@ -123,7 +127,7 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
                 && !move_selection_hit);
 
         if is_panning {
-            app.execute_command(Command::PanBy(response.drag_delta().into()));
+            app.ui.pan += response.drag_delta();
         }
 
         // 2. egui converts Ctrl+wheel into a Zoom event; normal wheel stays a Scroll event.
@@ -131,45 +135,43 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
             ctx.input(|i| (i.raw_scroll_delta, i.zoom_delta(), i.modifiers.ctrl));
         if response.hovered() {
             if ctrl_pressed && zoom_delta != 1.0 {
-                let old_zoom = app.zoom;
+                let old_zoom = app.ui.zoom;
                 let new_zoom = (old_zoom * zoom_delta).clamp(0.05, 30.0);
 
                 if let Some(hover_pos) = response.hover_pos() {
-                    let old_canvas_center = response.rect.center() + app.pan;
+                    let old_canvas_center = response.rect.center() + app.ui.pan;
                     let to_pointer = hover_pos - old_canvas_center;
                     let scale_ratio = new_zoom / old_zoom;
-                    app.execute_command(Command::PanBy((to_pointer * (1.0 - scale_ratio)).into()));
+                    app.ui.pan += to_pointer * (1.0 - scale_ratio);
                 }
-                app.execute_command(Command::SetZoom(new_zoom));
+                app.ui.zoom = new_zoom;
             }
             let vertical_pan = if ctrl_pressed { 0.0 } else { scroll_delta.y };
             if scroll_delta.x != 0.0 || vertical_pan != 0.0 {
-                app.execute_command(Command::PanBy(
-                    Vec2::new(scroll_delta.x, vertical_pan).into(),
-                ));
+                app.ui.pan += Vec2::new(scroll_delta.x, vertical_pan);
             }
         }
         max_pan = Vec2::new(
-            ((app.width as f32 * app.zoom - viewport_size.x) / 2.0).max(0.0),
-            ((app.height as f32 * app.zoom - viewport_size.y) / 2.0).max(0.0),
+            ((app.width as f32 * app.ui.zoom - viewport_size.x) / 2.0).max(0.0),
+            ((app.height as f32 * app.ui.zoom - viewport_size.y) / 2.0).max(0.0),
         );
         let clamped_pan = Vec2::new(
-            app.pan.x.clamp(-max_pan.x, max_pan.x),
-            app.pan.y.clamp(-max_pan.y, max_pan.y),
+            app.ui.pan.x.clamp(-max_pan.x, max_pan.x),
+            app.ui.pan.y.clamp(-max_pan.y, max_pan.y),
         );
-        if app.pan != clamped_pan {
-            app.execute_command(Command::SetPan(clamped_pan.into()));
+        if app.ui.pan != clamped_pan {
+            app.ui.pan = clamped_pan;
         }
 
         // 3. Calcolo del rettangolo dello schermo occupato dalla tela
-        let canvas_center = response.rect.center() + app.pan;
+        let canvas_center = response.rect.center() + app.ui.pan;
         let canvas_screen_size = canvas_size;
         let canvas_screen_rect = Rect::from_center_size(canvas_center, canvas_screen_size);
 
         // 4. Aggiornamento texture
         app.update_texture(ui);
 
-        let texture_id = if let Some(tex) = &app.canvas_texture {
+        let texture_id = if let Some(tex) = &app.ui.canvas_texture {
             tex.id()
         } else {
             return;
@@ -229,22 +231,20 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
 
                         match app.current_tool {
                             Tool::Select => {
-                                app.execute_command(Command::BeginDrawing {
-                                    drag_start: Some(c_pos.into()),
-                                    current: Some(c_pos.into()),
-                                    last: None,
-                                });
+                                app.ui.is_drawing = true;
+                                app.ui.drag_start_canvas = Some(c_pos);
+                                app.ui.current_canvas_pos = Some(c_pos);
+                                app.ui.last_canvas_pos = None;
                             }
                             Tool::Move => {
                                 if response.drag_started_by(egui::PointerButton::Primary) && {
                                     app.execute_command(Command::BeginSelectionMove(c_pos.into()));
                                     app.moving_selection.is_some()
                                 } {
-                                    app.execute_command(Command::BeginDrawing {
-                                        drag_start: Some(c_pos.into()),
-                                        current: Some(c_pos.into()),
-                                        last: None,
-                                    });
+                                    app.ui.is_drawing = true;
+                                    app.ui.drag_start_canvas = Some(c_pos);
+                                    app.ui.current_canvas_pos = Some(c_pos);
+                                    app.ui.last_canvas_pos = None;
                                 }
                             }
                             Tool::Pipette => {
@@ -265,31 +265,29 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
                             }
                             Tool::Brush | Tool::Eraser => {
                                 app.execute_command(Command::PushUndoSnapshot);
-                                app.execute_command(Command::BeginDrawing {
-                                    drag_start: None,
-                                    current: None,
-                                    last: Some(c_pos.into()),
-                                });
+                                app.ui.is_drawing = true;
+                                app.ui.drag_start_canvas = None;
+                                app.ui.current_canvas_pos = None;
+                                app.ui.last_canvas_pos = Some(c_pos);
                                 app.execute_command(Command::DrawPoint(c_pos.into()));
                             }
                             Tool::Line | Tool::Rectangle | Tool::Circle => {
                                 app.execute_command(Command::PushUndoSnapshot);
-                                app.execute_command(Command::BeginDrawing {
-                                    drag_start: Some(c_pos.into()),
-                                    current: Some(c_pos.into()),
-                                    last: None,
-                                });
+                                app.ui.is_drawing = true;
+                                app.ui.drag_start_canvas = Some(c_pos);
+                                app.ui.current_canvas_pos = Some(c_pos);
+                                app.ui.last_canvas_pos = None;
                             }
                         }
                     }
                 }
-            } else if response.dragged_by(egui::PointerButton::Primary) && app.is_drawing {
+            } else if response.dragged_by(egui::PointerButton::Primary) && app.ui.is_drawing {
                 if let Some(pointer_pos) = pointer_pos_opt {
                     let c_pos = screen_to_canvas(pointer_pos);
 
                     match app.current_tool {
                         Tool::Brush | Tool::Eraser => {
-                            if let Some(last_pos) = app.last_canvas_pos {
+                            if let Some(last_pos) = app.ui.last_canvas_pos {
                                 app.execute_command(Command::DrawLine {
                                     from: last_pos.into(),
                                     to: c_pos.into(),
@@ -297,12 +295,12 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
                             } else {
                                 app.execute_command(Command::DrawPoint(c_pos.into()));
                             }
-                            app.execute_command(Command::SetLastCanvasPosition(c_pos.into()));
+                            app.ui.last_canvas_pos = Some(c_pos);
                         }
                         Tool::Move => {
-                            app.execute_command(Command::SetCurrentCanvasPosition(c_pos.into()));
+                            app.ui.current_canvas_pos = Some(c_pos);
                             if let (Some(moving), Some(start)) =
-                                (&app.moving_selection, app.drag_start_canvas)
+                                (&app.moving_selection, app.ui.drag_start_canvas)
                             {
                                 let delta = c_pos - start;
                                 let max_x = app.width as f32 - moving.width as f32;
@@ -317,18 +315,18 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
                             }
                         }
                         Tool::Select | Tool::Line | Tool::Rectangle | Tool::Circle => {
-                            app.execute_command(Command::SetCurrentCanvasPosition(c_pos.into()));
+                            app.ui.current_canvas_pos = Some(c_pos);
                         }
                         _ => {}
                     }
                 }
-            } else if (response.drag_stopped() || (!response.dragged() && app.is_drawing))
-                && app.is_drawing
+            } else if (response.drag_stopped() || (!response.dragged() && app.ui.is_drawing))
+                && app.ui.is_drawing
             {
                 match (
                     app.current_tool,
-                    app.drag_start_canvas,
-                    app.current_canvas_pos,
+                    app.ui.drag_start_canvas,
+                    app.ui.current_canvas_pos,
                 ) {
                     (Tool::Select, Some(p0), Some(p1)) => {
                         let min_x = p0.x.min(p1.x).clamp(0.0, app.width as f32);
@@ -358,16 +356,19 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
                     }
                     _ => {}
                 }
-                app.execute_command(Command::EndDrawing);
+                app.ui.is_drawing = false;
+                app.ui.drag_start_canvas = None;
+                app.ui.last_canvas_pos = None;
+                app.ui.current_canvas_pos = None;
             }
         }
 
         // 6. Live Preview forme geometriche / selezione
-        if app.is_drawing {
-            if let (Some(c0), Some(c1)) = (app.drag_start_canvas, app.current_canvas_pos) {
+        if app.ui.is_drawing {
+            if let (Some(c0), Some(c1)) = (app.ui.drag_start_canvas, app.ui.current_canvas_pos) {
                 let s0 = canvas_to_screen(c0);
                 let s1 = canvas_to_screen(c1);
-                let preview_stroke_width = (app.brush_size * app.zoom).max(1.0);
+                let preview_stroke_width = (app.brush_size * app.ui.zoom).max(1.0);
                 let preview_color = app.brush_color;
                 let preview_fill_color = app.background_color;
 
@@ -478,7 +479,7 @@ pub fn show_canvas(app: &mut PaintApp, ctx: &egui::Context) {
         }
 
         // 8. Notifica Toast
-        if let Some((msg, time)) = &app.status_message {
+        if let Some((msg, time)) = &app.ui.status_message {
             if time.elapsed().as_secs_f32() < 3.0 {
                 egui::Area::new(egui::Id::new("notice_toast"))
                     .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -30.0))

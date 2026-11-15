@@ -46,7 +46,7 @@ impl PaintApp {
                 .active_layer_idx
                 .min(self.layers.len().saturating_sub(1));
             self.selection = prev.selection;
-            self.dirty_canvas = true;
+            self.mark_document_changed();
         }
     }
 
@@ -66,7 +66,7 @@ impl PaintApp {
                 .active_layer_idx
                 .min(self.layers.len().saturating_sub(1));
             self.selection = next.selection;
-            self.dirty_canvas = true;
+            self.mark_document_changed();
         }
     }
 }

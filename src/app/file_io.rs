@@ -4,7 +4,7 @@
 //! di copia/incolla tramite file. Le modifiche al documento passano per
 //! lo stato condiviso di [`PaintApp`].
 
-use egui::{Color32, Vec2};
+use egui::Color32;
 use printpdf::{Image, ImageTransform, Mm, PdfDocument};
 
 use crate::model::{ClipboardData, Layer, PaintApp};
@@ -26,12 +26,8 @@ fn encode_pdf(width: usize, height: usize, pixels: Vec<u8>) -> Result<Vec<u8>, S
     let translate_x_mm = (page_width - image_width_pt * 25.4 / 72.0) / 2.0;
     let translate_y_mm = (page_height - image_height_pt * 25.4 / 72.0) / 2.0;
 
-    let (document, page, layer) = PdfDocument::new(
-        "PixelCraft",
-        Mm(page_width),
-        Mm(page_height),
-        "Immagine",
-    );
+    let (document, page, layer) =
+        PdfDocument::new("PixelCraft", Mm(page_width), Mm(page_height), "Immagine");
     Image::from_dynamic_image(&image::DynamicImage::ImageRgba8(rgba_image)).add_to_layer(
         document.get_page(page).get_layer(layer),
         ImageTransform {
@@ -47,7 +43,7 @@ fn encode_pdf(width: usize, height: usize, pixels: Vec<u8>) -> Result<Vec<u8>, S
 }
 
 impl PaintApp {
-    pub fn save_to_pdf(&mut self, path: &str) {
+    pub fn save_to_pdf(&mut self, path: &str, notices: &mut Vec<String>) {
         let mut output_path = std::path::PathBuf::from(path);
         if !output_path
             .extension()
@@ -63,22 +59,22 @@ impl PaintApp {
             Err(error) => {
                 let message = format!("Errore durante la preparazione del PDF: {error}");
                 eprintln!("{message}");
-                self.show_notice(&message);
+                notices.push(message);
                 return;
             }
         };
 
         match std::fs::write(&output_path, pdf_bytes) {
-            Ok(()) => self.show_notice(&format!("PDF salvato in {path}")),
+            Ok(()) => notices.push(format!("PDF salvato in {path}")),
             Err(error) => {
                 let message = format!("Impossibile creare il PDF: {error}");
                 eprintln!("{message}");
-                self.show_notice(&message);
+                notices.push(message);
             }
         }
     }
 
-    pub fn load_from_png(&mut self, path: &str) {
+    pub fn load_from_png(&mut self, path: &str, notices: &mut Vec<String>) {
         match image::open(path) {
             Ok(img) => {
                 self.push_undo_snapshot();
@@ -105,22 +101,19 @@ impl PaintApp {
                 self.active_layer_idx = 1;
                 self.current_filepath = Some(path.to_string());
                 self.selection = None;
-                self.zoom = 1.0;
-                self.pan = Vec2::ZERO;
-                self.canvas_texture = None;
-                self.dirty_canvas = true;
-                self.show_notice(&format!("Immagine aperta: {} ({}x{} px)", path, w, h));
+                self.mark_document_changed();
+                notices.push(format!("Immagine aperta: {} ({}x{} px)", path, w, h));
                 println!("Immagine caricata: {} ({}x{} px)", path, w, h);
             }
             Err(e) => {
                 let err_msg = format!("Errore durante il caricamento: {}", e);
                 eprintln!("{}", err_msg);
-                self.show_notice(&err_msg);
+                notices.push(err_msg);
             }
         }
     }
 
-    pub fn save_to_png(&mut self, path: &str) {
+    pub fn save_to_png(&mut self, path: &str, notices: &mut Vec<String>) {
         let img_data = self.composite();
         if let Err(e) = image::save_buffer(
             path,
@@ -130,15 +123,15 @@ impl PaintApp {
             image::ColorType::Rgba8,
         ) {
             eprintln!("Errore durante il salvataggio: {}", e);
-            self.show_notice(&format!("Errore salvataggio: {}", e));
+            notices.push(format!("Errore salvataggio: {}", e));
         } else {
             self.current_filepath = Some(path.to_string());
-            self.show_notice(&format!("Salvato in {}", path));
+            notices.push(format!("Salvato in {}", path));
             println!("Immagine salvata in: {}", path);
         }
     }
 
-    pub fn copy_to_file(&mut self, path: &str) {
+    pub fn copy_to_file(&mut self, path: &str, notices: &mut Vec<String>) {
         if let Some((x0, y0, x1, y1)) = self.get_selection_bounds() {
             let w = (x1 - x0) as u32;
             let h = (y1 - y0) as u32;
@@ -151,18 +144,18 @@ impl PaintApp {
                     }
                 }
                 match image::save_buffer(path, &buffer, w, h, image::ColorType::Rgba8) {
-                    Ok(()) => self.show_notice("Selezione salvata su file"),
+                    Ok(()) => notices.push("Selezione salvata su file".to_string()),
                     Err(error) => {
                         let message = format!("Impossibile salvare la selezione: {error}");
                         eprintln!("{message}");
-                        self.show_notice(&message);
+                        notices.push(message);
                     }
                 }
             }
         }
     }
 
-    pub fn paste_from_file(&mut self, path: &str) {
+    pub fn paste_from_file(&mut self, path: &str, notices: &mut Vec<String>) {
         match image::open(path) {
             Ok(img) => {
                 let rgba = img.to_rgba8();
@@ -176,12 +169,12 @@ impl PaintApp {
                     height: h as usize,
                     pixels,
                 });
-                self.paste();
+                self.paste(notices);
             }
             Err(error) => {
                 let message = format!("Errore durante l'apertura dell'immagine: {error}");
                 eprintln!("{message}");
-                self.show_notice(&message);
+                notices.push(message);
             }
         }
     }

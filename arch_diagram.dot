@@ -31,12 +31,12 @@ digraph PixelCraftArchitecture {
     ];
 
     main [
-        label="main.rs\nEntry point · eframe::App\nKeyboard shortcuts · UI orchestration",
+        label="main.rs\nNative entry point · starts ui::EframeApp",
         fillcolor="#e8f5e9",
         color="#45965a"
     ];
     model [
-        label="model.rs — Shared application state and data types\nPaintApp · Layer · Tool · ClipboardData · HistoryState",
+        label="model.rs — Document state and data types\nPaintApp · Layer · Tool · ClipboardData · HistoryState\nNo UI notifications or rendering cache",
         fillcolor="#e6f3fb",
         color="#4299c8"
     ];
@@ -51,9 +51,14 @@ digraph PixelCraftArchitecture {
         margin=16;
 
         app_mod [
-            label="mod.rs\nInitialization · theme\nNotifications · texture sync",
+            label="mod.rs\nHeadless document construction\nRead-only document accessors",
             fillcolor="#fff3d6",
             color="#d69c2f"
+        ];
+        commands [
+            label="commands.rs\nCommand · CommandEngine\nDispatch · return notices",
+            fillcolor="#fff8e6",
+            color="#d6aa52"
         ];
         history [
             label="history.rs\nUndo / redo",
@@ -61,7 +66,7 @@ digraph PixelCraftArchitecture {
             color="#d6aa52"
         ];
         document [
-            label="document.rs\nCanvas · layers · selection\nClipboard · transforms · compositing",
+            label="document/\nCanvas · selection · clipboard\nLayers · transforms · compositing",
             fillcolor="#fff8e6",
             color="#d6aa52"
         ];
@@ -75,8 +80,9 @@ digraph PixelCraftArchitecture {
             fillcolor="#fff8e6",
             color="#d6aa52"
         ];
-        { rank=same; history; document; }
+        { rank=same; commands; history; document; }
         { rank=same; tools; file_io; }
+        app_mod -> commands [style=invis, weight=3];
         app_mod -> history [style=invis, weight=3];
         app_mod -> document [style=invis, weight=3];
         history -> tools [style=invis, weight=3];
@@ -93,7 +99,12 @@ digraph PixelCraftArchitecture {
         margin=16;
 
         ui_mod [
-            label="mod.rs\nExports UI components",
+            label="mod.rs\nUI module",
+            fillcolor="#f2eafb",
+            color="#8c5bb1"
+        ];
+        eframe_app [
+            label="eframe_app.rs\nEframeApp · owns PaintApp + UiState\nNotifications · texture cache/revision\nTheme · keyboard · frame orchestration",
             fillcolor="#f2eafb",
             color="#8c5bb1"
         ];
@@ -113,6 +124,7 @@ digraph PixelCraftArchitecture {
             color="#a173bd"
         ];
         { rank=same; menu; panels; canvas; }
+        ui_mod -> eframe_app [style=invis, weight=3];
         ui_mod -> menu [style=invis, weight=3];
         ui_mod -> panels [style=invis, weight=3];
         ui_mod -> canvas [style=invis, weight=3];
@@ -122,19 +134,25 @@ digraph PixelCraftArchitecture {
     main -> app_mod [label="mod app"];
     main -> ui_mod [label="mod ui"];
     main -> model [label="mod model"];
+    app_mod -> commands [label="mod"];
     app_mod -> history [label="mod"];
     app_mod -> document [label="mod"];
     app_mod -> tools [label="mod"];
     app_mod -> file_io [label="mod"];
+    ui_mod -> eframe_app [label="mod"];
     ui_mod -> menu [label="mod"];
     ui_mod -> panels [label="mod"];
     ui_mod -> canvas [label="mod"];
+    eframe_app -> commands [label="dispatch commands"];
+    menu -> eframe_app [label="user intent"];
+    panels -> eframe_app [label="user intent"];
+    canvas -> eframe_app [label="input · revision-driven texture"];
 
     footer [
         shape=plain,
         style="",
         fontsize=11,
-        label="UI components call PaintApp methods implemented across app/*; app and ui share the data types in model.rs."
+        label="UI adapters dispatch app::Command and present returned notices. Document edits advance PaintApp's revision; EframeApp refreshes the texture cache."
     ];
     { rank=max; footer; }
     file_io -> footer [style=invis, weight=2];

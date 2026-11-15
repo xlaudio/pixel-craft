@@ -1,17 +1,15 @@
 //! # model.rs — Strutture dati dell'applicazione
 //!
-//! Questo file definisce **solo tipi e struct**, senza logica applicativa.
-//! È il "contratto" condiviso da tutti gli altri moduli: ogni modulo
-//! importa da qui le definizioni di cui ha bisogno.
+//! Questo file definisce i dati condivisi del documento e dell'applicazione.
 //!
 //! ## Contenuto
 //! - [`Layer`]         — Un livello pittura (nome, visibilità, opacità, pixel)
 //! - [`Tool`]          — Enumerazione degli strumenti disponibili (pennello, gomma, …)
 //! - [`ClipboardData`] — Buffer degli appunti (pixel copiati/tagliati)
 //! - [`HistoryState`]  — Snapshot dello stato per undo/redo
-//! - [`PaintApp`]      — Struttura principale con tutto lo stato dell'applicazione
+//! - [`PaintApp`]      — Stato del documento, strumenti e cronologia
 
-use egui::{Color32, Pos2, Rect, TextureHandle, Vec2};
+use egui::{Color32, Rect};
 use std::collections::VecDeque;
 
 // ============================================================================
@@ -58,22 +56,6 @@ pub enum Tool {
     Circle,    // Cerchio / Ellisse (C)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Appearance {
-    /// Follow the platform theme when the windowing backend can detect it.
-    System,
-    /// Always use the dark color scheme.
-    Dark,
-    /// Always use the light color scheme.
-    Light,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ColorDialogTarget {
-    Foreground,
-    Background,
-}
-
 // ============================================================================
 // 3. STATO DELLA CRONOLOGIA E APPUNTI (CLIPBOARD)
 // ============================================================================
@@ -109,62 +91,32 @@ pub struct HistoryState {
 // ============================================================================
 
 pub struct PaintApp {
-    pub width: usize,
-    pub height: usize,
-    pub layers: Vec<Layer>,
-    pub active_layer_idx: usize,
+    pub(crate) width: usize,
+    pub(crate) height: usize,
+    pub(crate) layers: Vec<Layer>,
+    pub(crate) active_layer_idx: usize,
 
     // Cronologia
-    pub undo_stack: Vec<HistoryState>,
-    pub redo_stack: Vec<HistoryState>,
-    pub max_history: usize,
+    pub(crate) undo_stack: Vec<HistoryState>,
+    pub(crate) redo_stack: Vec<HistoryState>,
+    pub(crate) max_history: usize,
 
     // Selezione e Appunti (Clipboard)
-    pub selection: Option<Rect>,
-    pub clipboard: Option<ClipboardData>,
-    pub status_message: Option<(String, std::time::Instant)>,
-    pub dirty_canvas: bool,
+    pub(crate) selection: Option<Rect>,
+    pub(crate) clipboard: Option<ClipboardData>,
+    pub(crate) moving_selection: Option<MovingSelection>,
+    pub(crate) document_revision: u64,
 
     // Proprietà strumenti
-    pub current_tool: Tool,
-    pub brush_color: Color32,
-    pub background_color: Color32,
-    pub brush_size: f32,
-    pub fill_shapes: bool,
-    pub appearance: Appearance,
-    pub applied_dark_theme: bool,
-
-    // Vista (Zoom e Pan)
-    pub zoom: f32,
-    pub pan: Vec2,
-
-    // Stato interazione disegno
-    pub canvas_texture: Option<TextureHandle>,
-    pub is_drawing: bool,
-    pub drag_start_canvas: Option<Pos2>,
-    pub last_canvas_pos: Option<Pos2>,
-    pub current_canvas_pos: Option<Pos2>,
-    pub moving_selection: Option<MovingSelection>,
-
-    // Tavolozza rapida
-    pub palette: Vec<Color32>,
+    pub(crate) current_tool: Tool,
+    pub(crate) brush_color: Color32,
+    pub(crate) background_color: Color32,
+    pub(crate) brush_size: f32,
+    pub(crate) fill_shapes: bool,
 
     // Percorso del file corrente per salvataggio rapido
-    pub current_filepath: Option<String>,
-
-    // Dialoghi per le dimensioni del documento
-    pub show_new_image_dialog: bool,
-    pub new_image_width: usize,
-    pub new_image_height: usize,
-    pub show_resize_image_dialog: bool,
-    pub resize_image_width: usize,
-    pub resize_image_height: usize,
-    pub lock_resize_aspect_ratio: bool,
-    pub show_print_dialog: bool,
-    pub print_output_path: String,
-    pub color_dialog_target: Option<ColorDialogTarget>,
-    pub color_dialog_color: Color32,
+    pub(crate) current_filepath: Option<String>,
 
     // Coda per i pixel flood-fill (evita stack overflow)
-    pub _flood_queue: VecDeque<(i32, i32)>,
+    pub(crate) _flood_queue: VecDeque<(i32, i32)>,
 }

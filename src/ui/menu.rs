@@ -18,8 +18,8 @@
 use eframe::egui;
 use egui::Vec2;
 
+use super::eframe_app::{Appearance, EframeApp};
 use crate::app::Command;
-use crate::model::{Appearance, PaintApp};
 
 // ============================================================================
 // HELPER PER VOCI DEI MENU
@@ -51,12 +51,12 @@ pub fn menu_action_button(
 // MENU FILE
 // ============================================================================
 
-pub fn show_menu_file(app: &mut PaintApp, ui: &mut egui::Ui, ctx: &egui::Context) {
+pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     ui.menu_button("File", |ui| {
         if ui.button("📄 Nuovo...").clicked() {
-            app.new_image_width = app.width;
-            app.new_image_height = app.height;
-            app.show_new_image_dialog = true;
+            app.ui.new_image_width = app.width;
+            app.ui.new_image_height = app.height;
+            app.ui.show_new_image_dialog = true;
             ui.close_menu();
         }
         if ui.button("📂 Apri PNG...").clicked() {
@@ -91,7 +91,7 @@ pub fn show_menu_file(app: &mut PaintApp, ui: &mut egui::Ui, ctx: &egui::Context
             ui.close_menu();
         }
         if ui.button("🖨 Stampa...").clicked() {
-            app.show_print_dialog = true;
+            app.ui.show_print_dialog = true;
             ui.close_menu();
         }
         ui.separator();
@@ -105,7 +105,7 @@ pub fn show_menu_file(app: &mut PaintApp, ui: &mut egui::Ui, ctx: &egui::Context
 // MENU EDIT
 // ============================================================================
 
-pub fn show_menu_edit(app: &mut PaintApp, ui: &mut egui::Ui) {
+pub fn show_menu_edit(app: &mut EframeApp, ui: &mut egui::Ui) {
     ui.menu_button("Edit", |ui| {
         ui.set_min_width(240.0);
 
@@ -195,22 +195,22 @@ pub fn show_menu_edit(app: &mut PaintApp, ui: &mut egui::Ui) {
 // MENU VIEW
 // ============================================================================
 
-pub fn show_menu_view(app: &mut PaintApp, ui: &mut egui::Ui) {
+pub fn show_menu_view(app: &mut EframeApp, ui: &mut egui::Ui) {
     ui.menu_button("View", |ui| {
         if ui.button("🔍 Zoom 100% (Ctrl+0)").clicked() {
-            app.execute_command(Command::ResetView);
+            app.reset_view();
             ui.close_menu();
         }
         if ui.button("➕ Ingrandisci").clicked() {
-            app.execute_command(Command::ZoomBy(1.25));
+            app.zoom_by(1.25);
             ui.close_menu();
         }
         if ui.button("➖ Rimpicciolisci").clicked() {
-            app.execute_command(Command::ZoomBy(1.0 / 1.25));
+            app.zoom_by(1.0 / 1.25);
             ui.close_menu();
         }
         if ui.button("🎯 Centra Vista").clicked() {
-            app.execute_command(Command::ResetView);
+            app.reset_view();
             ui.close_menu();
         }
     });
@@ -220,7 +220,7 @@ pub fn show_menu_view(app: &mut PaintApp, ui: &mut egui::Ui) {
 // MENU IMAGE
 // ============================================================================
 
-pub fn show_menu_image(app: &mut PaintApp, ui: &mut egui::Ui) {
+pub fn show_menu_image(app: &mut EframeApp, ui: &mut egui::Ui) {
     ui.menu_button("Image", |ui| {
         let has_sel = app.has_selection();
         if ui
@@ -249,10 +249,10 @@ pub fn show_menu_image(app: &mut PaintApp, ui: &mut egui::Ui) {
         }
         ui.separator();
         if ui.button("📐 Ridimensiona / Scala...").clicked() {
-            app.resize_image_width = app.width;
-            app.resize_image_height = app.height;
-            app.lock_resize_aspect_ratio = true;
-            app.show_resize_image_dialog = true;
+            app.ui.resize_image_width = app.width;
+            app.ui.resize_image_height = app.height;
+            app.ui.lock_resize_aspect_ratio = true;
+            app.ui.show_resize_image_dialog = true;
             ui.close_menu();
         }
     });
@@ -262,7 +262,7 @@ pub fn show_menu_image(app: &mut PaintApp, ui: &mut egui::Ui) {
 // MENU COLORS
 // ============================================================================
 
-pub fn show_menu_colors(app: &mut PaintApp, ui: &mut egui::Ui) {
+pub fn show_menu_colors(app: &mut EframeApp, ui: &mut egui::Ui) {
     ui.menu_button("Colors", |ui| {
         if ui.button("🎨 Inverti colori").clicked() {
             app.execute_command(Command::InvertColors);
@@ -279,29 +279,29 @@ pub fn show_menu_colors(app: &mut PaintApp, ui: &mut egui::Ui) {
 // MENU SETTINGS
 // ============================================================================
 
-pub fn show_menu_settings(app: &mut PaintApp, ui: &mut egui::Ui) {
+pub fn show_menu_settings(app: &mut EframeApp, ui: &mut egui::Ui) {
     ui.menu_button("Settings", |ui| {
         ui.menu_button("Appearance", |ui| {
             if ui
-                .selectable_label(app.appearance == Appearance::System, "System")
+                .selectable_label(app.ui.appearance == Appearance::System, "System")
                 .on_hover_text(
                     "Segue il tema di sistema quando il sistema operativo lo rende disponibile.",
                 )
                 .clicked()
             {
-                app.execute_command(Command::SetAppearance(Appearance::System));
+                app.ui.appearance = Appearance::System;
             }
             if ui
-                .selectable_label(app.appearance == Appearance::Dark, "Dark")
+                .selectable_label(app.ui.appearance == Appearance::Dark, "Dark")
                 .clicked()
             {
-                app.execute_command(Command::SetAppearance(Appearance::Dark));
+                app.ui.appearance = Appearance::Dark;
             }
             if ui
-                .selectable_label(app.appearance == Appearance::Light, "Light")
+                .selectable_label(app.ui.appearance == Appearance::Light, "Light")
                 .clicked()
             {
-                app.execute_command(Command::SetAppearance(Appearance::Light));
+                app.ui.appearance = Appearance::Light;
             }
         });
         ui.separator();

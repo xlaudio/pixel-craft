@@ -5,7 +5,7 @@
 
 use egui::{Color32, Pos2, Rect, Vec2};
 
-use crate::model::{Appearance, PaintApp, Tool};
+use crate::model::{PaintApp, Tool};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanvasPoint {
@@ -123,20 +123,6 @@ pub enum Command {
     SetTool(Tool),
     SetBrushSize(f32),
     SetFillShapes(bool),
-    SetAppearance(Appearance),
-    SetZoom(f32),
-    ZoomBy(f32),
-    ResetView,
-    SetPan(CanvasVector),
-    PanBy(CanvasVector),
-    BeginDrawing {
-        drag_start: Option<CanvasPoint>,
-        current: Option<CanvasPoint>,
-        last: Option<CanvasPoint>,
-    },
-    SetCurrentCanvasPosition(CanvasPoint),
-    SetLastCanvasPosition(CanvasPoint),
-    EndDrawing,
     DrawPoint(CanvasPoint),
     DrawLine {
         from: CanvasPoint,
@@ -168,25 +154,28 @@ pub enum Command {
 pub struct CommandEngine;
 
 impl CommandEngine {
-    pub fn execute(&mut self, app: &mut PaintApp, command: Command) {
+    pub fn execute(&mut self, app: &mut PaintApp, command: Command) -> Vec<String> {
+        let mut notices = Vec::new();
         match command {
             Command::Undo => app.undo(),
             Command::Redo => app.redo(),
             Command::PushUndoSnapshot => app.push_undo_snapshot(),
-            Command::NewCanvas { width, height } => app.new_canvas(width, height),
-            Command::ResizeCanvas { width, height } => app.resize_canvas(width, height),
+            Command::NewCanvas { width, height } => app.new_canvas(width, height, &mut notices),
+            Command::ResizeCanvas { width, height } => {
+                app.resize_canvas(width, height, &mut notices)
+            }
             Command::SelectAll => app.select_all(),
             Command::SetSelection(selection) => {
                 app.selection =
                     selection.map(|rect| Rect::from_min_max(rect.min.into(), rect.max.into()));
             }
             Command::Deselect => app.deselect(),
-            Command::CopySelection => app.copy_selection(),
-            Command::CutSelection => app.cut_selection(),
+            Command::CopySelection => app.copy_selection(&mut notices),
+            Command::CutSelection => app.cut_selection(&mut notices),
             Command::DeleteSelection => app.delete_selection(),
-            Command::Paste => app.paste(),
-            Command::PasteFromSystemClipboard => app.paste_from_system_clipboard(),
-            Command::PasteInNewWindow => app.paste_in_new_window(),
+            Command::Paste => app.paste(&mut notices),
+            Command::PasteFromSystemClipboard => app.paste_from_system_clipboard(&mut notices),
+            Command::PasteInNewWindow => app.paste_in_new_window(&mut notices),
             Command::CropToSelection => app.crop_to_selection(),
             Command::FlipHorizontal => app.flip_horizontal(),
             Command::FlipVertical => app.flip_vertical(),
@@ -195,7 +184,7 @@ impl CommandEngine {
                 if app.active_layer_idx < app.layers.len() {
                     app.push_undo_snapshot();
                     app.layers[app.active_layer_idx].clear(Color32::TRANSPARENT);
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
             Command::CreateLayer => {
@@ -204,7 +193,7 @@ impl CommandEngine {
                 app.layers
                     .push(crate::model::Layer::new(&name, app.width, app.height));
                 app.active_layer_idx = app.layers.len() - 1;
-                app.dirty_canvas = true;
+                app.mark_document_changed();
             }
             Command::DuplicateActiveLayer => {
                 if let Some(active) = app.layers.get(app.active_layer_idx).cloned() {
@@ -213,10 +202,10 @@ impl CommandEngine {
                     duplicate.name = format!("{} (Copia)", duplicate.name);
                     app.layers.insert(app.active_layer_idx + 1, duplicate);
                     app.active_layer_idx += 1;
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
-            Command::MergeLayersDown(index) => app.merge_layers_down(index),
+            Command::MergeLayersDown(index) => app.merge_layers_down(index, &mut notices),
             Command::DeleteLayer(index) => {
                 if app.layers.len() > 1 && index < app.layers.len() {
                     app.push_undo_snapshot();
@@ -224,7 +213,7 @@ impl CommandEngine {
                     if app.active_layer_idx >= app.layers.len() {
                         app.active_layer_idx = app.layers.len() - 1;
                     }
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
             Command::MoveLayerUp(index) => {
@@ -232,7 +221,7 @@ impl CommandEngine {
                     app.push_undo_snapshot();
                     app.layers.swap(index, index + 1);
                     app.active_layer_idx = index + 1;
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
             Command::MoveLayerDown(index) => {
@@ -240,7 +229,7 @@ impl CommandEngine {
                     app.push_undo_snapshot();
                     app.layers.swap(index, index - 1);
                     app.active_layer_idx = index - 1;
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
             Command::SetActiveLayer(index) => {
@@ -251,13 +240,13 @@ impl CommandEngine {
             Command::SetLayerVisible { index, visible } => {
                 if let Some(layer) = app.layers.get_mut(index) {
                     layer.visible = visible;
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
             Command::SetLayerOpacity { index, opacity } => {
                 if let Some(layer) = app.layers.get_mut(index) {
                     layer.opacity = opacity.clamp(0.0, 1.0);
-                    app.dirty_canvas = true;
+                    app.mark_document_changed();
                 }
             }
             Command::SetTool(tool) => app.current_tool = tool,
@@ -270,37 +259,6 @@ impl CommandEngine {
             Command::SetBackgroundColor(color) => {
                 app.background_color =
                     Color32::from_rgba_unmultiplied(color.red, color.green, color.blue, color.alpha)
-            }
-            Command::SetAppearance(appearance) => app.appearance = appearance,
-            Command::SetZoom(zoom) => app.zoom = zoom.clamp(0.05, 30.0),
-            Command::ZoomBy(factor) => app.zoom = (app.zoom * factor).clamp(0.05, 30.0),
-            Command::ResetView => {
-                app.zoom = 1.0;
-                app.pan = Vec2::ZERO;
-            }
-            Command::SetPan(pan) => app.pan = Vec2::new(pan.x, pan.y),
-            Command::PanBy(delta) => app.pan += Vec2::new(delta.x, delta.y),
-            Command::BeginDrawing {
-                drag_start,
-                current,
-                last,
-            } => {
-                app.is_drawing = true;
-                app.drag_start_canvas = drag_start.map(Into::into);
-                app.current_canvas_pos = current.map(Into::into);
-                app.last_canvas_pos = last.map(Into::into);
-            }
-            Command::SetCurrentCanvasPosition(position) => {
-                app.current_canvas_pos = Some(position.into());
-            }
-            Command::SetLastCanvasPosition(position) => {
-                app.last_canvas_pos = Some(position.into());
-            }
-            Command::EndDrawing => {
-                app.is_drawing = false;
-                app.drag_start_canvas = None;
-                app.last_canvas_pos = None;
-                app.current_canvas_pos = None;
             }
             Command::DrawPoint(point) => app.draw_point_on_active(point.x, point.y),
             Command::DrawLine { from, to } => app.draw_continuous_line(from.into(), to.into()),
@@ -317,12 +275,13 @@ impl CommandEngine {
             Command::FinishSelectionMove(delta) => {
                 app.finish_selection_move(Vec2::new(delta.x, delta.y))
             }
-            Command::SavePng(path) => app.save_to_png(&path),
-            Command::LoadPng(path) => app.load_from_png(&path),
-            Command::SavePdf(path) => app.save_to_pdf(&path),
-            Command::CopySelectionToFile(path) => app.copy_to_file(&path),
-            Command::PasteFromFile(path) => app.paste_from_file(&path),
+            Command::SavePng(path) => app.save_to_png(&path, &mut notices),
+            Command::LoadPng(path) => app.load_from_png(&path, &mut notices),
+            Command::SavePdf(path) => app.save_to_pdf(&path, &mut notices),
+            Command::CopySelectionToFile(path) => app.copy_to_file(&path, &mut notices),
+            Command::PasteFromFile(path) => app.paste_from_file(&path, &mut notices),
         }
+        notices
     }
 }
 
@@ -339,10 +298,45 @@ mod tests {
 
         engine.execute(&mut app, Command::SetTool(Tool::Eraser));
         engine.execute(&mut app, Command::CreateLayer);
+        engine.execute(&mut app, Command::SetBrushSize(20.0));
 
         assert_eq!(app.current_tool, Tool::Eraser);
         assert_eq!(app.layers.len(), 3);
         assert_eq!(app.active_layer_idx, 2);
+        assert_eq!(app.brush_size, 20.0);
+    }
+
+    #[test]
+    fn invalid_canvas_command_returns_a_notice_without_changing_revision() {
+        let mut app = PaintApp::new_headless();
+        let notices = CommandEngine.execute(
+            &mut app,
+            Command::NewCanvas {
+                width: 0,
+                height: 100,
+            },
+        );
+
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].contains("Dimensioni immagine non valide"));
+        assert_eq!(app.document_revision, 0);
+    }
+
+    #[test]
+    fn raster_edits_and_undo_advance_the_document_revision() {
+        let mut app = PaintApp::new_headless();
+        let mut engine = CommandEngine;
+        engine.execute(&mut app, Command::PushUndoSnapshot);
+        engine.execute(
+            &mut app,
+            Command::DrawPoint(super::CanvasPoint { x: 8.0, y: 8.0 }),
+        );
+        let drawn_revision = app.document_revision;
+
+        engine.execute(&mut app, Command::Undo);
+
+        assert!(drawn_revision > 0);
+        assert!(app.document_revision > drawn_revision);
     }
 
     #[test]

@@ -5,7 +5,7 @@
 
 use eframe::egui;
 
-use pixel_craft::model::PaintApp;
+use pixel_craft::ui::EframeApp;
 
 // ============================================================================
 // MAIN ENTRY POINT
@@ -24,6 +24,6 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "PixelCraft",
         options,
-        Box::new(|cc| Box::new(PaintApp::new(cc))),
+        Box::new(|cc| Box::new(EframeApp::new(cc))),
     )
 }

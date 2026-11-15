@@ -1,7 +1,8 @@
 //! # panels.rs — Pannelli dell'interfaccia
 //!
 //! Contiene i pannelli egui fissi ai lati e in basso nella finestra principale.
-//! I pannelli leggono e modificano direttamente lo stato di [`PaintApp`].
+//! I pannelli leggono lo stato del documento e aggiornano quello UI
+//! attraverso l'adattatore [`EframeApp`].
 //!
 //! ## Pannelli
 //! - [`show_tools_panel`]  — **Pannello sinistro**: selezione strumento attivo
@@ -18,14 +19,15 @@
 use eframe::egui;
 use egui::{Color32, Sense, Stroke, Vec2};
 
+use super::eframe_app::{ColorDialogTarget, EframeApp};
 use crate::app::Command;
-use crate::model::{ColorDialogTarget, PaintApp, Tool};
+use crate::model::Tool;
 
 // ============================================================================
 // PANNELLO STRUMENTI (SX)
 // ============================================================================
 
-pub fn show_tools_panel(app: &mut PaintApp, ctx: &egui::Context) {
+pub fn show_tools_panel(app: &mut EframeApp, ctx: &egui::Context) {
     egui::SidePanel::left("tools_panel")
         .resizable(false)
         .default_width(170.0)
@@ -159,7 +161,7 @@ fn paint_tool_icon(painter: &egui::Painter, rect: egui::Rect, tool: Tool, color:
     }
 }
 
-pub fn show_palette_panel(app: &mut PaintApp, ctx: &egui::Context) {
+pub fn show_palette_panel(app: &mut EframeApp, ctx: &egui::Context) {
     egui::TopBottomPanel::bottom("palette_panel")
         .resizable(false)
         .show(ctx, |ui| {
@@ -201,12 +203,12 @@ pub fn show_palette_panel(app: &mut PaintApp, ctx: &egui::Context) {
                     Stroke::new(2.0_f32, Color32::from_rgb(61, 174, 233)),
                 );
                 if background_response.double_clicked_by(egui::PointerButton::Primary) {
-                    app.color_dialog_target = Some(ColorDialogTarget::Background);
-                    app.color_dialog_color = app.background_color;
+                    app.ui.color_dialog_target = Some(ColorDialogTarget::Background);
+                    app.ui.color_dialog_color = app.background_color;
                 }
                 if foreground_response.double_clicked_by(egui::PointerButton::Primary) {
-                    app.color_dialog_target = Some(ColorDialogTarget::Foreground);
-                    app.color_dialog_color = app.brush_color;
+                    app.ui.color_dialog_target = Some(ColorDialogTarget::Foreground);
+                    app.ui.color_dialog_color = app.brush_color;
                 }
                 background_response.on_hover_text("Sfondo · doppio clic per scegliere un colore");
                 foreground_response
@@ -215,7 +217,7 @@ pub fn show_palette_panel(app: &mut PaintApp, ctx: &egui::Context) {
 
                 let swatch_size = 20.0;
                 let columns = 15;
-                let palette = app.palette.clone();
+                let palette = app.ui.palette.clone();
                 let (palette_rect, _) = ui.allocate_exact_size(
                     Vec2::new(swatch_size * columns as f32, swatch_size * 2.0),
                     Sense::hover(),
@@ -273,14 +275,14 @@ pub fn show_palette_panel(app: &mut PaintApp, ctx: &egui::Context) {
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 if ui.small_button("−").on_hover_text("Riduci zoom").clicked() {
-                                    app.execute_command(Command::ZoomBy(1.0 / 1.2));
+                                    app.zoom_by(1.0 / 1.2);
                                 }
-                                ui.label(format!("{:.0}%", app.zoom * 100.0));
+                                ui.label(format!("{:.0}%", app.ui.zoom * 100.0));
                                 if ui.small_button("+").on_hover_text("Aumenta zoom").clicked() {
-                                    app.execute_command(Command::ZoomBy(1.2));
+                                    app.zoom_by(1.2);
                                 }
                                 if ui.small_button("Reset").clicked() {
-                                    app.execute_command(Command::ResetView);
+                                    app.reset_view();
                                 }
                             });
                         });
@@ -293,7 +295,7 @@ pub fn show_palette_panel(app: &mut PaintApp, ctx: &egui::Context) {
 // PANNELLO LIVELLI (DX)
 // ============================================================================
 
-pub fn show_layers_panel(app: &mut PaintApp, ctx: &egui::Context) {
+pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
     egui::SidePanel::right("layers_panel")
         .resizable(true)
         .default_width(220.0)

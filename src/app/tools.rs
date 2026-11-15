@@ -45,7 +45,7 @@ impl PaintApp {
                 }
             }
         }
-        self.dirty_canvas = true;
+        self.mark_document_changed();
     }
 
     pub fn draw_continuous_line(&mut self, p0: Pos2, p1: Pos2) {
@@ -110,7 +110,7 @@ impl PaintApp {
                 }
             }
         }
-        self.dirty_canvas = true;
+        self.mark_document_changed();
     }
 
     pub fn pick_color(&mut self, x: i32, y: i32) {
@@ -222,6 +222,6 @@ impl PaintApp {
             }
             _ => {}
         }
-        self.dirty_canvas = true;
+        self.mark_document_changed();
     }
 }
