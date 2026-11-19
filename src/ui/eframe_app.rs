@@ -33,6 +33,8 @@ pub struct UiState {
     pub pan: Vec2,
     pub canvas_texture: Option<TextureHandle>,
     pub textured_document_revision: Option<u64>,
+    pub layer_thumbnail_textures: Vec<TextureHandle>,
+    pub layer_thumbnail_revision: Option<u64>,
     pub is_drawing: bool,
     pub drag_start_canvas: Option<egui::Pos2>,
     pub last_canvas_pos: Option<egui::Pos2>,
@@ -45,6 +47,10 @@ pub struct UiState {
     pub resize_image_width: usize,
     pub resize_image_height: usize,
     pub lock_resize_aspect_ratio: bool,
+    pub show_rotate_image_dialog: bool,
+    pub rotation_angle_mode: u8,
+    pub rotation_custom_degrees: u16,
+    pub rotation_clockwise: bool,
     pub show_print_dialog: bool,
     pub print_output_path: String,
     pub color_dialog_target: Option<ColorDialogTarget>,
@@ -262,7 +268,7 @@ impl eframe::App for EframeApp {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(format!("Tela: {}x{} px", self.width, self.height));
-                    if let Some(selection) = self.selection {
+                    if let Some(selection) = self.selection.as_ref().map(|region| region.bounds()) {
                         ui.label(format!(
                             "| Sel: {}x{} px",
                             selection.width().abs().round(),

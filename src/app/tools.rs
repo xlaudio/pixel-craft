@@ -8,9 +8,30 @@
 use egui::{Color32, Pos2};
 use std::collections::VecDeque;
 
-use crate::model::{PaintApp, Tool};
+use crate::model::{PaintApp, SelectionRegion, SelectionTool, Tool};
 
 impl PaintApp {
+    pub fn begin_selection_gesture(&mut self, tool: SelectionTool, point: Pos2) {
+        self.selection_tools.begin(tool, point);
+    }
+
+    pub fn update_selection_gesture(&mut self, point: Pos2) {
+        self.selection_tools.update(point);
+    }
+
+    pub fn finish_selection_gesture(&mut self, point: Pos2) {
+        let selection = self.selection_tools.finish(point);
+        if selection.is_some() || self.selection.is_some() {
+            self.push_undo_snapshot();
+            self.selection = selection;
+            self.mark_document_changed();
+        }
+    }
+
+    pub fn selection_gesture_preview(&self, point: Pos2) -> Option<SelectionRegion> {
+        self.selection_tools.preview(point)
+    }
+
     pub fn draw_point_on_active(&mut self, cx: f32, cy: f32) {
         if self.layers.is_empty() {
             return;

@@ -11,5 +11,6 @@ pub mod dialogs;
 pub mod eframe_app;
 pub mod menu;
 pub mod panels;
+pub mod selection_renderer;
 
 pub use eframe_app::{Appearance, ColorDialogTarget, EframeApp, UiState};

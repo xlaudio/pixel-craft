@@ -5,7 +5,7 @@
 
 use egui::{Color32, Pos2, Rect, Vec2};
 
-use crate::model::{PaintApp, Tool};
+use crate::model::{PaintApp, SelectionTool, Tool};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CanvasPoint {
@@ -93,6 +93,9 @@ pub enum Command {
     },
     SelectAll,
     SetSelection(Option<CanvasRect>),
+    BeginSelection(CanvasPoint),
+    UpdateSelection(CanvasPoint),
+    FinishSelection(CanvasPoint),
     Deselect,
     CopySelection,
     CutSelection,
@@ -103,6 +106,12 @@ pub enum Command {
     CropToSelection,
     FlipHorizontal,
     FlipVertical,
+    RotateClockwise,
+    RotateCounterClockwise,
+    RotateImage {
+        angle_degrees: u16,
+        clockwise: bool,
+    },
     InvertColors,
     ClearActiveLayer,
     CreateLayer,
@@ -166,9 +175,25 @@ impl CommandEngine {
             }
             Command::SelectAll => app.select_all(),
             Command::SetSelection(selection) => {
-                app.selection =
-                    selection.map(|rect| Rect::from_min_max(rect.min.into(), rect.max.into()));
+                let selection = selection.map(|rect| {
+                    crate::model::SelectionRegion::Rectangle(Rect::from_min_max(
+                        rect.min.into(),
+                        rect.max.into(),
+                    ))
+                });
+                if app.selection != selection {
+                    app.push_undo_snapshot();
+                    app.selection = selection;
+                    app.mark_document_changed();
+                }
             }
+            Command::BeginSelection(point) => {
+                if let Some(tool) = SelectionTool::from_tool(app.current_tool) {
+                    app.begin_selection_gesture(tool, point.into());
+                }
+            }
+            Command::UpdateSelection(point) => app.update_selection_gesture(point.into()),
+            Command::FinishSelection(point) => app.finish_selection_gesture(point.into()),
             Command::Deselect => app.deselect(),
             Command::CopySelection => app.copy_selection(&mut notices),
             Command::CutSelection => app.cut_selection(&mut notices),
@@ -179,6 +204,12 @@ impl CommandEngine {
             Command::CropToSelection => app.crop_to_selection(),
             Command::FlipHorizontal => app.flip_horizontal(),
             Command::FlipVertical => app.flip_vertical(),
+            Command::RotateClockwise => app.rotate_clockwise(),
+            Command::RotateCounterClockwise => app.rotate_counter_clockwise(),
+            Command::RotateImage {
+                angle_degrees,
+                clockwise,
+            } => app.rotate_image(angle_degrees, clockwise, &mut notices),
             Command::InvertColors => app.invert_colors(),
             Command::ClearActiveLayer => {
                 if app.active_layer_idx < app.layers.len() {
@@ -249,7 +280,10 @@ impl CommandEngine {
                     app.mark_document_changed();
                 }
             }
-            Command::SetTool(tool) => app.current_tool = tool,
+            Command::SetTool(tool) => {
+                app.current_tool = tool;
+                app.selection_tools.gesture = None;
+            }
             Command::SetBrushSize(size) => app.brush_size = size.clamp(1.0, 80.0),
             Command::SetFillShapes(fill) => app.fill_shapes = fill,
             Command::SetForegroundColor(color) => {
@@ -351,5 +385,84 @@ mod tests {
         );
 
         assert_eq!(restored, color);
+    }
+
+    #[test]
+    fn selection_commands_create_ellipse_and_lasso_regions_and_history_restores_them() {
+        let mut app = PaintApp::new_headless();
+        let mut engine = CommandEngine;
+        engine.execute(&mut app, Command::SetTool(Tool::Select));
+        engine.execute(
+            &mut app,
+            Command::BeginSelection(super::CanvasPoint { x: 1.0, y: 1.0 }),
+        );
+        engine.execute(
+            &mut app,
+            Command::FinishSelection(super::CanvasPoint { x: 10.0, y: 10.0 }),
+        );
+        assert!(matches!(
+            app.selection,
+            Some(crate::model::SelectionRegion::Rectangle(_))
+        ));
+
+        engine.execute(&mut app, Command::SetTool(Tool::EllipseSelect));
+        engine.execute(
+            &mut app,
+            Command::BeginSelection(super::CanvasPoint { x: 2.0, y: 3.0 }),
+        );
+        engine.execute(
+            &mut app,
+            Command::FinishSelection(super::CanvasPoint { x: 12.0, y: 13.0 }),
+        );
+        assert!(matches!(
+            app.selection,
+            Some(crate::model::SelectionRegion::Ellipse(_))
+        ));
+
+        engine.execute(&mut app, Command::Undo);
+        assert!(matches!(
+            app.selection,
+            Some(crate::model::SelectionRegion::Rectangle(_))
+        ));
+        engine.execute(&mut app, Command::Redo);
+        assert!(matches!(
+            app.selection,
+            Some(crate::model::SelectionRegion::Ellipse(_))
+        ));
+
+        engine.execute(&mut app, Command::SetTool(Tool::LassoSelect));
+        engine.execute(
+            &mut app,
+            Command::BeginSelection(super::CanvasPoint { x: 20.0, y: 20.0 }),
+        );
+        engine.execute(
+            &mut app,
+            Command::UpdateSelection(super::CanvasPoint { x: 30.0, y: 20.0 }),
+        );
+        engine.execute(
+            &mut app,
+            Command::UpdateSelection(super::CanvasPoint { x: 30.0, y: 30.0 }),
+        );
+        engine.execute(
+            &mut app,
+            Command::FinishSelection(super::CanvasPoint { x: 20.0, y: 30.0 }),
+        );
+        let Some(crate::model::SelectionRegion::Polygon(points)) = app.selection.as_ref() else {
+            panic!("lasso should produce a polygon selection");
+        };
+        assert_eq!(points.len(), 5);
+        assert_eq!(points.first(), points.last());
+        assert!(app.selection_contains(egui::pos2(25.0, 25.0)));
+        assert!(!app.selection_contains(egui::pos2(35.0, 25.0)));
+        engine.execute(&mut app, Command::Undo);
+        assert!(matches!(
+            app.selection,
+            Some(crate::model::SelectionRegion::Ellipse(_))
+        ));
+        engine.execute(&mut app, Command::Redo);
+        assert!(matches!(
+            app.selection,
+            Some(crate::model::SelectionRegion::Polygon(_))
+        ));
     }
 }

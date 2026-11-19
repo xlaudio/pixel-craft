@@ -122,6 +122,84 @@ pub fn show_document_dialogs(app: &mut EframeApp, ctx: &egui::Context) {
         }
     }
 
+    if app.ui.show_rotate_image_dialog {
+        let mut open = app.ui.show_rotate_image_dialog;
+        let angle_degrees = match app.ui.rotation_angle_mode {
+            0 => 90,
+            1 => 180,
+            2 => 270,
+            _ => app.ui.rotation_custom_degrees,
+        };
+        let dimensions = app.dimensions_after_rotation(angle_degrees, app.ui.rotation_clockwise);
+        let mut rotate_requested = false;
+        let mut cancel_requested = false;
+        egui::Window::new("Ruota immagine")
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(Vec2::new(390.0, 360.0))
+            .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+            .open(&mut open)
+            .show(ctx, |ui| {
+                ui.group(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("Dimensioni").strong());
+                    });
+                    ui.add_space(6.0);
+                    ui.label(format!("Originale: {} x {} px", app.width, app.height));
+                    if let Some((width, height)) = dimensions {
+                        ui.label(format!("Dopo la rotazione: {} x {} px", width, height));
+                    } else {
+                        ui.colored_label(
+                            Color32::RED,
+                            "Le dimensioni risultanti superano il limite consentito.",
+                        );
+                    }
+                });
+
+                ui.add_space(6.0);
+                ui.group(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("Direzione").strong());
+                    });
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut app.ui.rotation_clockwise, false, "↺ Antioraria");
+                        ui.radio_value(&mut app.ui.rotation_clockwise, true, "↻ Oraria");
+                    });
+                });
+
+                ui.add_space(6.0);
+                ui.group(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("Angolo").strong());
+                    });
+                    ui.radio_value(&mut app.ui.rotation_angle_mode, 0, "90 gradi");
+                    ui.radio_value(&mut app.ui.rotation_angle_mode, 1, "180 gradi");
+                    ui.radio_value(&mut app.ui.rotation_angle_mode, 2, "270 gradi");
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut app.ui.rotation_angle_mode, 3, "Personalizzato:");
+                        ui.add_enabled(
+                            app.ui.rotation_angle_mode == 3,
+                            egui::DragValue::new(&mut app.ui.rotation_custom_degrees)
+                                .clamp_range(0..=360)
+                                .suffix(" gradi"),
+                        );
+                    });
+                });
+
+                ui.add_space(6.0);
+                ui.separator();
+                (rotate_requested, cancel_requested) =
+                    dialog_actions(ui, "Ruota", dimensions.is_some());
+            });
+        app.ui.show_rotate_image_dialog = open && !cancel_requested && !rotate_requested;
+        if rotate_requested {
+            app.execute_command(Command::RotateImage {
+                angle_degrees,
+                clockwise: app.ui.rotation_clockwise,
+            });
+        }
+    }
+
     if app.ui.show_print_dialog {
         let mut open = app.ui.show_print_dialog;
         let mut print_requested = false;

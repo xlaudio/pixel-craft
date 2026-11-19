@@ -14,7 +14,7 @@ pub use commands::{Command, CommandEngine};
 use egui::Color32;
 use std::collections::VecDeque;
 
-use crate::model::{Layer, PaintApp, Tool};
+use crate::model::{Layer, PaintApp, SelectionRegion, Tool};
 
 impl PaintApp {
     /// Execute an application command and return user-facing notices.
@@ -35,7 +35,17 @@ impl PaintApp {
     }
 
     pub fn selection(&self) -> Option<egui::Rect> {
+        self.selection.as_ref().map(SelectionRegion::bounds)
+    }
+
+    pub fn selection_region(&self) -> Option<&SelectionRegion> {
+        self.selection.as_ref()
+    }
+
+    pub fn selection_contains(&self, point: egui::Pos2) -> bool {
         self.selection
+            .as_ref()
+            .is_some_and(|selection| selection.contains(point))
     }
 
     pub fn clipboard(&self) -> Option<&crate::model::ClipboardData> {
@@ -96,6 +106,7 @@ impl PaintApp {
             selection: None,
             clipboard: None,
             moving_selection: None,
+            selection_tools: Default::default(),
             document_revision: 0,
             current_tool: Tool::Brush,
             brush_color: Color32::from_rgb(200, 50, 50),

@@ -2,7 +2,7 @@
 
 use egui::{Color32, Pos2, Rect, Vec2};
 
-use crate::model::{ClipboardData, Layer, MovingSelection, PaintApp};
+use crate::model::{ClipboardData, Layer, MovingSelection, PaintApp, SelectionRegion};
 
 use super::valid_canvas_dimensions;
 
@@ -36,15 +36,13 @@ pub(super) fn clipboard_image_to_data(
 
 impl PaintApp {
     pub fn has_selection(&self) -> bool {
-        if let Some(rect) = self.selection {
-            rect.width().abs() >= 1.0 && rect.height().abs() >= 1.0
-        } else {
-            false
-        }
+        self.selection
+            .as_ref()
+            .is_some_and(SelectionRegion::is_valid)
     }
 
     pub fn get_selection_bounds(&self) -> Option<(usize, usize, usize, usize)> {
-        let rect = self.selection?;
+        let rect = self.selection.as_ref()?.bounds();
         let min_x =
             (rect.min.x.min(rect.max.x).floor() as i32).clamp(0, self.width as i32) as usize;
         let max_x = (rect.min.x.max(rect.max.x).ceil() as i32).clamp(0, self.width as i32) as usize;
@@ -60,14 +58,23 @@ impl PaintApp {
     }
 
     pub fn select_all(&mut self) {
-        self.selection = Some(Rect::from_min_max(
+        let selection = Some(SelectionRegion::Rectangle(Rect::from_min_max(
             Pos2::ZERO,
             Pos2::new(self.width as f32, self.height as f32),
-        ));
+        )));
+        if self.selection != selection {
+            self.push_undo_snapshot();
+            self.selection = selection;
+            self.mark_document_changed();
+        }
     }
 
     pub fn deselect(&mut self) {
-        self.selection = None;
+        if self.selection.is_some() {
+            self.push_undo_snapshot();
+            self.selection = None;
+            self.mark_document_changed();
+        }
     }
 
     pub fn crop_to_selection(&mut self) {
@@ -75,11 +82,20 @@ impl PaintApp {
             self.push_undo_snapshot();
             let width = x1 - x0;
             let height = y1 - y0;
+            let selection = self
+                .selection
+                .clone()
+                .expect("selection bounds require selection");
             for layer in &mut self.layers {
                 let mut pixels = Vec::with_capacity(width * height);
                 for y in y0..y1 {
                     for x in x0..x1 {
-                        pixels.push(layer.pixels[y * self.width + x]);
+                        let pixel = layer.pixels[y * self.width + x];
+                        pixels.push(if selection.contains_pixel(x, y) {
+                            pixel
+                        } else {
+                            Color32::TRANSPARENT
+                        });
                     }
                 }
                 layer.pixels = pixels;
@@ -92,7 +108,7 @@ impl PaintApp {
     }
 
     pub fn begin_selection_move(&mut self, position: Pos2) -> bool {
-        let Some(selection) = self.selection else {
+        let Some(selection) = self.selection.clone() else {
             return false;
         };
         if !selection.contains(position) {
@@ -107,23 +123,29 @@ impl PaintApp {
         let width = x1 - x0;
         let height = y1 - y0;
         let mut pixels = Vec::with_capacity(width * height);
+        let mut mask = Vec::with_capacity(width * height);
         for y in y0..y1 {
-            let start = y * self.width + x0;
-            pixels.extend_from_slice(&layer.pixels[start..start + width]);
+            for x in x0..x1 {
+                let selected = selection.contains_pixel(x, y);
+                mask.push(selected);
+                pixels.push(if selected {
+                    layer.pixels[y * self.width + x]
+                } else {
+                    Color32::TRANSPARENT
+                });
+            }
         }
 
         self.push_undo_snapshot();
         self.moving_selection = Some(MovingSelection {
-            origin: Rect::from_min_max(
-                Pos2::new(x0 as f32, y0 as f32),
-                Pos2::new(x1 as f32, y1 as f32),
-            ),
+            origin: selection,
             x: x0,
             y: y0,
             width,
             height,
             layer_idx: self.active_layer_idx,
             pixels,
+            mask,
         });
         true
     }
@@ -144,21 +166,25 @@ impl PaintApp {
         };
         if let Some(layer) = self.layers.get_mut(moving.layer_idx) {
             for row in 0..moving.height {
-                let start = (moving.y + row) * self.width + moving.x;
-                layer.pixels[start..start + moving.width].fill(clear_color);
+                for col in 0..moving.width {
+                    let mask_index = row * moving.width + col;
+                    if moving.mask[mask_index] {
+                        let source_index = (moving.y + row) * self.width + moving.x + col;
+                        layer.pixels[source_index] = clear_color;
+                    }
+                }
             }
             for row in 0..moving.height {
-                let source_start = row * moving.width;
-                let target_start = (y + row) * self.width + x;
                 for col in 0..moving.width {
-                    let pixel = moving.pixels[source_start + col];
-                    if pixel.a() > 0 {
-                        layer.pixels[target_start + col] = pixel;
+                    let mask_index = row * moving.width + col;
+                    if moving.mask[mask_index] {
+                        let target_index = (y + row) * self.width + x + col;
+                        layer.pixels[target_index] = moving.pixels[mask_index];
                     }
                 }
             }
         }
-        self.selection = Some(moving.origin.translate(Vec2::new(
+        self.selection = Some(moving.origin.translated(Vec2::new(
             x as f32 - moving.x as f32,
             y as f32 - moving.y as f32,
         )));
@@ -173,7 +199,17 @@ impl PaintApp {
             if let Some(layer) = self.layers.get(self.active_layer_idx) {
                 for y in y0..y1 {
                     for x in x0..x1 {
-                        pixels.push(layer.pixels[y * self.width + x]);
+                        pixels.push(
+                            if self
+                                .selection
+                                .as_ref()
+                                .is_some_and(|selection| selection.contains_pixel(x, y))
+                            {
+                                layer.pixels[y * self.width + x]
+                            } else {
+                                Color32::TRANSPARENT
+                            },
+                        );
                     }
                 }
                 self.clipboard = Some(ClipboardData {
@@ -204,7 +240,13 @@ impl PaintApp {
             if let Some(layer) = self.layers.get_mut(self.active_layer_idx) {
                 for y in y0..y1 {
                     for x in x0..x1 {
-                        layer.pixels[y * self.width + x] = clear_color;
+                        if self
+                            .selection
+                            .as_ref()
+                            .is_some_and(|selection| selection.contains_pixel(x, y))
+                        {
+                            layer.pixels[y * self.width + x] = clear_color;
+                        }
                     }
                 }
             }
@@ -215,7 +257,8 @@ impl PaintApp {
 
     pub fn paste(&mut self, notices: &mut Vec<String>) {
         if let Some(clip) = self.clipboard.clone() {
-            let (px, py) = if let Some(rect) = self.selection {
+            let (px, py) = if let Some(rect) = &self.selection {
+                let rect = rect.bounds();
                 (
                     (rect.min.x.min(rect.max.x).floor() as i32).clamp(0, self.width as i32)
                         as usize,
@@ -248,10 +291,10 @@ impl PaintApp {
             self.layers.push(layer);
             self.active_layer_idx = self.layers.len() - 1;
 
-            self.selection = Some(Rect::from_min_size(
+            self.selection = Some(SelectionRegion::Rectangle(Rect::from_min_size(
                 Pos2::new(px as f32, py as f32),
                 Vec2::new(pasted_width as f32, pasted_height as f32),
-            ));
+            )));
             self.mark_document_changed();
             notices.push(format!(
                 "Immagine incollata su un nuovo livello ({}x{} px)",
@@ -302,10 +345,10 @@ impl PaintApp {
                     }
                 }
             }
-            self.selection = Some(Rect::from_min_size(
+            self.selection = Some(SelectionRegion::Rectangle(Rect::from_min_size(
                 Pos2::ZERO,
                 Vec2::new(clip.width as f32, clip.height as f32),
-            ));
+            )));
             self.mark_document_changed();
         } else {
             notices.push("Appunti vuoti".to_string());
@@ -316,7 +359,7 @@ impl PaintApp {
 #[cfg(test)]
 mod tests {
     use super::clipboard_image_to_data;
-    use crate::model::{Layer, PaintApp};
+    use crate::model::{Layer, PaintApp, SelectionRegion};
     use egui::Color32;
     use egui::{Pos2, Rect, Vec2};
     use std::borrow::Cow;
@@ -345,10 +388,10 @@ mod tests {
                 ],
             },
         ];
-        app.selection = Some(Rect::from_min_size(
+        app.selection = Some(SelectionRegion::Rectangle(Rect::from_min_size(
             Pos2::new(1.0, 0.0),
             Vec2::new(1.0, 2.0),
-        ));
+        )));
 
         app.crop_to_selection();
 
@@ -359,6 +402,58 @@ mod tests {
             vec![Color32::from_gray(1), Color32::from_gray(3)]
         );
         assert!(app.selection.is_none());
+    }
+
+    #[test]
+    fn ellipse_copy_and_delete_only_affect_pixels_inside_the_region() {
+        let mut app = PaintApp::new_headless();
+        app.width = 5;
+        app.height = 5;
+        app.layers[1].pixels = (0..25)
+            .map(|index| Color32::from_rgb(index, 0, 0))
+            .collect();
+        app.selection = Some(SelectionRegion::Ellipse(Rect::from_min_max(
+            Pos2::ZERO,
+            Pos2::new(5.0, 5.0),
+        )));
+        let corner_pixel = app.layers[1].pixels[0];
+        let center_pixel = app.layers[1].pixels[2 * 5 + 2];
+        let mut notices = Vec::new();
+
+        app.copy_selection(&mut notices);
+
+        let clipboard = app.clipboard.as_ref().expect("ellipse copied");
+        assert_eq!(clipboard.pixels[0], Color32::TRANSPARENT);
+        assert_eq!(clipboard.pixels[2 * 5 + 2], center_pixel);
+
+        app.delete_selection();
+
+        assert_eq!(app.layers[1].pixels[0], corner_pixel);
+        assert_eq!(app.layers[1].pixels[2 * 5 + 2], Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn moving_ellipse_preserves_unselected_pixels_and_moves_its_mask() {
+        let mut app = PaintApp::new_headless();
+        app.width = 7;
+        app.height = 7;
+        app.layers[1].pixels = (0..49)
+            .map(|index| Color32::from_rgb(index, 0, 0))
+            .collect();
+        app.selection = Some(SelectionRegion::Ellipse(Rect::from_min_max(
+            Pos2::new(1.0, 1.0),
+            Pos2::new(5.0, 5.0),
+        )));
+        let unselected_corner = app.layers[1].pixels[1 * 7 + 1];
+        let selected_pixel = app.layers[1].pixels[3 * 7 + 1];
+
+        assert!(app.begin_selection_move(Pos2::new(3.0, 3.0)));
+        app.finish_selection_move(Vec2::new(1.0, 0.0));
+
+        assert_eq!(app.layers[1].pixels[1 * 7 + 1], unselected_corner);
+        assert_eq!(app.layers[1].pixels[3 * 7 + 1], Color32::TRANSPARENT);
+        assert_eq!(app.layers[1].pixels[3 * 7 + 2], selected_pixel);
+        assert!(matches!(app.selection, Some(SelectionRegion::Ellipse(_))));
     }
 
     #[test]

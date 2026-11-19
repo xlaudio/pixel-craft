@@ -14,13 +14,14 @@
 //!    Move, Line, Rectangle, Circle)
 //! 6. **Live preview** — anteprima vettoriale durante il trascinamento
 //!    per selezione, linea, rettangolo ed ellisse
-//! 7. **Overlay selezione** — doppio bordo azzurro Breeze + 8 maniglie
+//! 7. **Overlay selezione** — contorno statico tratteggiato
 //! 8. **Toast** — notifica flottante temporanea in basso al centro
 
 use eframe::egui;
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 use super::eframe_app::EframeApp;
+use super::selection_renderer;
 use crate::app::Command;
 use crate::model::Tool;
 
@@ -109,7 +110,7 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
             .and_then(|pos| {
                 let canvas_center = response.rect.center() + app.ui.pan;
                 let canvas_rect = Rect::from_center_size(canvas_center, canvas_size);
-                app.selection.filter(|selection| {
+                app.selection.as_ref().filter(|selection| {
                     canvas_rect.contains(pos)
                         && selection.contains(Pos2::new(
                             (pos.x - canvas_rect.left()) / app.ui.zoom,
@@ -230,11 +231,12 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                         let c_pos = screen_to_canvas(pointer_pos);
 
                         match app.current_tool {
-                            Tool::Select => {
+                            Tool::Select | Tool::EllipseSelect | Tool::LassoSelect => {
                                 app.ui.is_drawing = true;
                                 app.ui.drag_start_canvas = Some(c_pos);
                                 app.ui.current_canvas_pos = Some(c_pos);
                                 app.ui.last_canvas_pos = None;
+                                app.execute_command(Command::BeginSelection(c_pos.into()));
                             }
                             Tool::Move => {
                                 if response.drag_started_by(egui::PointerButton::Primary) && {
@@ -284,6 +286,10 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
             } else if response.dragged_by(egui::PointerButton::Primary) && app.ui.is_drawing {
                 if let Some(pointer_pos) = pointer_pos_opt {
                     let c_pos = screen_to_canvas(pointer_pos);
+                    let c_pos = Pos2::new(
+                        c_pos.x.clamp(0.0, app.width as f32),
+                        c_pos.y.clamp(0.0, app.height as f32),
+                    );
 
                     match app.current_tool {
                         Tool::Brush | Tool::Eraser => {
@@ -299,23 +305,20 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                         }
                         Tool::Move => {
                             app.ui.current_canvas_pos = Some(c_pos);
-                            if let (Some(moving), Some(start)) =
-                                (&app.moving_selection, app.ui.drag_start_canvas)
-                            {
-                                let delta = c_pos - start;
-                                let max_x = app.width as f32 - moving.width as f32;
-                                let max_y = app.height as f32 - moving.height as f32;
-                                let delta = Vec2::new(
-                                    (moving.x as f32 + delta.x).clamp(0.0, max_x) - moving.x as f32,
-                                    (moving.y as f32 + delta.y).clamp(0.0, max_y) - moving.y as f32,
-                                );
-                                app.execute_command(Command::SetSelection(Some(
-                                    moving.origin.translate(delta).into(),
-                                )));
-                            }
                         }
-                        Tool::Select | Tool::Line | Tool::Rectangle | Tool::Circle => {
+                        Tool::Select
+                        | Tool::EllipseSelect
+                        | Tool::LassoSelect
+                        | Tool::Line
+                        | Tool::Rectangle
+                        | Tool::Circle => {
                             app.ui.current_canvas_pos = Some(c_pos);
+                            if matches!(
+                                app.current_tool,
+                                Tool::Select | Tool::EllipseSelect | Tool::LassoSelect
+                            ) {
+                                app.execute_command(Command::UpdateSelection(c_pos.into()));
+                            }
                         }
                         _ => {}
                     }
@@ -323,28 +326,35 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
             } else if (response.drag_stopped() || (!response.dragged() && app.ui.is_drawing))
                 && app.ui.is_drawing
             {
+                if matches!(
+                    app.current_tool,
+                    Tool::Select | Tool::EllipseSelect | Tool::LassoSelect | Tool::Move
+                ) {
+                    if let Some(pointer_pos) = pointer_pos_opt {
+                        let c_pos = screen_to_canvas(pointer_pos);
+                        let c_pos = Pos2::new(
+                            c_pos.x.clamp(0.0, app.width as f32),
+                            c_pos.y.clamp(0.0, app.height as f32),
+                        );
+                        app.ui.current_canvas_pos = Some(c_pos);
+                        if matches!(
+                            app.current_tool,
+                            Tool::Select | Tool::EllipseSelect | Tool::LassoSelect
+                        ) {
+                            app.execute_command(Command::UpdateSelection(c_pos.into()));
+                        }
+                    }
+                }
                 match (
                     app.current_tool,
                     app.ui.drag_start_canvas,
                     app.ui.current_canvas_pos,
                 ) {
-                    (Tool::Select, Some(p0), Some(p1)) => {
-                        let min_x = p0.x.min(p1.x).clamp(0.0, app.width as f32);
-                        let max_x = p0.x.max(p1.x).clamp(0.0, app.width as f32);
-                        let min_y = p0.y.min(p1.y).clamp(0.0, app.height as f32);
-                        let max_y = p0.y.max(p1.y).clamp(0.0, app.height as f32);
-                        if (max_x - min_x) > 2.0 && (max_y - min_y) > 2.0 {
-                            app.execute_command(Command::SetSelection(Some(
-                                Rect::from_min_max(
-                                    Pos2::new(min_x, min_y),
-                                    Pos2::new(max_x, max_y),
-                                )
-                                .into(),
-                            )));
-                        } else {
-                            app.execute_command(Command::SetSelection(None));
-                        }
-                    }
+                    (
+                        Tool::Select | Tool::EllipseSelect | Tool::LassoSelect,
+                        Some(_),
+                        Some(end),
+                    ) => app.execute_command(Command::FinishSelection(end.into())),
                     (Tool::Move, Some(start), Some(end)) => {
                         app.execute_command(Command::FinishSelectionMove((end - start).into()));
                     }
@@ -373,18 +383,10 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                 let preview_fill_color = app.background_color;
 
                 match app.current_tool {
-                    Tool::Select => {
-                        let rect = Rect::from_two_pos(s0, s1);
-                        painter.rect_stroke(
-                            rect,
-                            0.0_f32,
-                            Stroke::new(1.5_f32, Color32::from_rgb(61, 174, 233)),
-                        );
-                        painter.rect_stroke(
-                            rect.expand(1.0_f32),
-                            0.0_f32,
-                            Stroke::new(1.0_f32, Color32::WHITE),
-                        );
+                    Tool::Select | Tool::EllipseSelect | Tool::LassoSelect => {
+                        if let Some(region) = app.selection_gesture_preview(c1) {
+                            selection_renderer::render(&painter, &region, canvas_to_screen);
+                        }
                     }
                     Tool::Line => {
                         painter.line_segment(
@@ -445,37 +447,28 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
         }
 
         // 7. Overlay selezione attiva
-        if let Some(sel) = app.selection {
-            let p0 = canvas_to_screen(sel.min);
-            let p1 = canvas_to_screen(sel.max);
-            let sel_rect = Rect::from_two_pos(p0, p1);
-
-            painter.rect_stroke(
-                sel_rect,
-                0.0_f32,
-                Stroke::new(1.5_f32, Color32::from_black_alpha(220)),
-            );
-            painter.rect_stroke(
-                sel_rect.expand(1.0_f32),
-                0.0_f32,
-                Stroke::new(1.2_f32, Color32::from_rgb(61, 174, 233)),
-            );
-
-            let handle_positions = [
-                sel_rect.left_top(),
-                sel_rect.right_top(),
-                sel_rect.left_bottom(),
-                sel_rect.right_bottom(),
-                sel_rect.center_top(),
-                sel_rect.center_bottom(),
-                sel_rect.left_center(),
-                sel_rect.right_center(),
-            ];
-            for pos in handle_positions {
-                let handle_rect = Rect::from_center_size(pos, Vec2::splat(6.0));
-                painter.rect_filled(handle_rect, 0.0, Color32::WHITE);
-                painter.rect_stroke(handle_rect, 0.0, Stroke::new(1.0_f32, Color32::BLACK));
-            }
+        let display_selection = app
+            .moving_selection
+            .as_ref()
+            .map(|moving| {
+                let delta = match (app.ui.drag_start_canvas, app.ui.current_canvas_pos) {
+                    (Some(start), Some(current)) => {
+                        let max_x = app.width as f32 - moving.width as f32;
+                        let max_y = app.height as f32 - moving.height as f32;
+                        Vec2::new(
+                            (moving.x as f32 + current.x - start.x).clamp(0.0, max_x)
+                                - moving.x as f32,
+                            (moving.y as f32 + current.y - start.y).clamp(0.0, max_y)
+                                - moving.y as f32,
+                        )
+                    }
+                    _ => Vec2::ZERO,
+                };
+                moving.origin.translated(delta)
+            })
+            .or_else(|| app.selection.clone());
+        if let Some(selection) = display_selection {
+            selection_renderer::render(&painter, &selection, canvas_to_screen);
         }
 
         // 8. Notifica Toast

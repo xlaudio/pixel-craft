@@ -11,7 +11,7 @@
 //!   Select All, Deselect, Copy/Paste to/from File
 //! - [`show_menu_view`]     — Menu **View**: Zoom 100%, Ingrandisci, Rimpicciolisci, Centra
 //! - [`show_menu_image`]    — Menu **Image**: Ritaglia, Svuota livello,
-//!   Flip orizzontale/verticale, Inverti colori, Ridimensiona
+//!   Flip, Ruota immagine, Inverti colori, Ridimensiona
 //! - [`show_menu_colors`]   — Menu **Colors**: Inverti colori, Modifica tavolozza
 //! - [`show_menu_settings`] — Menu **Settings**: Appearance, scorciatoie e barre
 
@@ -241,6 +241,13 @@ pub fn show_menu_image(app: &mut EframeApp, ui: &mut egui::Ui) {
         }
         if ui.button("↕ Rifletti verticalmente").clicked() {
             app.execute_command(Command::FlipVertical);
+            ui.close_menu();
+        }
+        if ui.button("🔄 Ruota immagine...").clicked() {
+            app.ui.rotation_angle_mode = 0;
+            app.ui.rotation_custom_degrees = 2;
+            app.ui.rotation_clockwise = true;
+            app.ui.show_rotate_image_dialog = true;
             ui.close_menu();
         }
         if ui.button("🎨 Inverti colori").clicked() {

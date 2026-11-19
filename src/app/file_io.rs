@@ -139,7 +139,15 @@ impl PaintApp {
             if let Some(layer) = self.layers.get(self.active_layer_idx) {
                 for y in y0..y1 {
                     for x in x0..x1 {
-                        let p = layer.pixels[y * self.width + x];
+                        let p = if self
+                            .selection
+                            .as_ref()
+                            .is_some_and(|selection| selection.contains_pixel(x, y))
+                        {
+                            layer.pixels[y * self.width + x]
+                        } else {
+                            Color32::TRANSPARENT
+                        };
                         buffer.extend_from_slice(&[p.r(), p.g(), p.b(), p.a()]);
                     }
                 }

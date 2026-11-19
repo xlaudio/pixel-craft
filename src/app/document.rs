@@ -84,14 +84,12 @@ impl PaintApp {
             layer.pixels = resize_layer_pixels(&layer.pixels, old_width, old_height, width, height);
         }
 
-        if let Some(selection) = &mut self.selection {
-            let scale_x = width as f32 / old_width as f32;
-            let scale_y = height as f32 / old_height as f32;
-            selection.min.x *= scale_x;
-            selection.max.x *= scale_x;
-            selection.min.y *= scale_y;
-            selection.max.y *= scale_y;
-        }
+        let scale_x = width as f32 / old_width as f32;
+        let scale_y = height as f32 / old_height as f32;
+        self.selection = self
+            .selection
+            .as_ref()
+            .map(|selection| selection.scaled(scale_x, scale_y));
 
         self.width = width;
         self.height = height;
@@ -212,9 +210,8 @@ mod tests {
             height: 1,
             pixels: vec![pasted_color, Color32::TRANSPARENT],
         });
-        app.selection = Some(Rect::from_min_size(
-            Pos2::new(8.0, 9.0),
-            Vec2::new(2.0, 1.0),
+        app.selection = Some(crate::model::SelectionRegion::Rectangle(
+            Rect::from_min_size(Pos2::new(8.0, 9.0), Vec2::new(2.0, 1.0)),
         ));
 
         let mut notices = Vec::new();
@@ -240,9 +237,8 @@ mod tests {
         let original_layer_count = app.layers.len();
         let copied_color = Color32::from_rgb(25, 100, 200);
         app.layers[app.active_layer_idx].pixels[4 * app.width + 3] = copied_color;
-        app.selection = Some(Rect::from_min_size(
-            Pos2::new(3.0, 4.0),
-            Vec2::new(1.0, 1.0),
+        app.selection = Some(crate::model::SelectionRegion::Rectangle(
+            Rect::from_min_size(Pos2::new(3.0, 4.0), Vec2::new(1.0, 1.0)),
         ));
 
         let mut notices = Vec::new();

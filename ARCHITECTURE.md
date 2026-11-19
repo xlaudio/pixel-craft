@@ -56,14 +56,26 @@ engine.execute(&mut state, Command::SetTool(Tool::Brush));
 | `src/app/document/selection.rs` | Selection editing, selection moves, and clipboard operations |
 | `src/app/document/layers.rs` | Layer merging and pixel-level transformations |
 | `src/app/history.rs` | Undo/redo snapshots |
-| `src/app/tools.rs` | Raster drawing and paint algorithms |
+| `src/app/tools.rs` | Raster drawing and selection gesture management |
 | `src/app/file_io.rs` | Image/PDF loading and saving; paths are supplied by the caller |
 | `src/app/mod.rs` | Headless document state construction |
 | `src/model.rs` | Layers, tools, history snapshots, and `PaintApp` document state |
 | `src/ui/eframe_app.rs` | eframe adapter, UI state, rendering cache, and keyboard translation |
+| `src/ui/selection_renderer.rs` | Static dashed rendering for selection regions |
 | `src/ui/` | egui views; widgets gather input and dispatch commands |
 
 File pickers and dialogs remain GUI adapter concerns. They provide paths or
 command values to the engine instead of being opened by document commands.
 The `Command` payloads use plain coordinates and RGBA channels so transport
 adapters can map their own request formats without exposing egui widgets.
+
+## Selection tools
+
+The rectangular, elliptical, and free-form selection tools share the
+`SelectionTool` gesture abstraction and `SelectionToolManager`. Completed
+selections are stored as `SelectionRegion` values (rectangle, ellipse, or
+closed polygon) in the document and in undo/redo snapshots. Pixel operations
+use the region's containment mask while retaining its bounds for clipboard
+dimensions and cropping. The UI renders these geometries through a separate
+`SelectionRenderer`, which draws a static, alternating high-contrast dashed
+outline for active selections and gesture previews.

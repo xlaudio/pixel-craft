@@ -36,7 +36,11 @@ pub fn show_tools_panel(app: &mut EframeApp, ctx: &egui::Context) {
             ui.separator();
 
             for row in [
-                [(Tool::Select, "Selezione", "S"), (Tool::Move, "Sposta", "M")],
+                [(Tool::Select, "Selezione rettangolare", "S"), (Tool::Move, "Sposta", "M")],
+                [
+                    (Tool::EllipseSelect, "Selezione ellittica", ""),
+                    (Tool::LassoSelect, "Selezione libera", ""),
+                ],
                 [(Tool::Brush, "Pennello", "B"), (Tool::Eraser, "Gomma", "E")],
                 [(Tool::Pipette, "Contagocce", "I"), (Tool::Bucket, "Secchiello", "G")],
                 [(Tool::Line, "Linea", "L"), (Tool::Rectangle, "Rettangolo", "R")],
@@ -51,6 +55,7 @@ pub fn show_tools_panel(app: &mut EframeApp, ctx: &egui::Context) {
                     }
                 });
             }
+
             ui.horizontal(|ui| {
                 if tool_button(ui, app.current_tool, Tool::Circle, "Ellisse", "C") {
                     app.execute_command(Command::SetTool(Tool::Circle));
@@ -111,6 +116,28 @@ fn paint_tool_icon(painter: &egui::Painter, rect: egui::Rect, tool: Tool, color:
     match tool {
         Tool::Select => {
             painter.rect_stroke(rect, 1.0, stroke);
+        }
+        Tool::EllipseSelect => {
+            let points = (0..24)
+                .map(|step| {
+                    let angle = step as f32 * (std::f32::consts::TAU / 24.0);
+                    egui::pos2(
+                        center.x + angle.cos() * rect.width() / 2.0,
+                        center.y + angle.sin() * rect.height() / 2.0,
+                    )
+                })
+                .collect();
+            painter.add(egui::Shape::closed_line(points, stroke));
+        }
+        Tool::LassoSelect => {
+            let points = [
+                rect.left_bottom(),
+                rect.left_top() + Vec2::new(2.0, 1.0),
+                rect.right_top() - Vec2::new(2.0, 0.0),
+                rect.right_center() + Vec2::new(-1.0, 2.0),
+                rect.center_bottom() + Vec2::new(1.0, -2.0),
+            ];
+            painter.add(egui::Shape::closed_line(points.to_vec(), stroke));
         }
         Tool::Move => {
             painter.line_segment([rect.left_center(), rect.right_center()], stroke);
@@ -296,6 +323,7 @@ pub fn show_palette_panel(app: &mut EframeApp, ctx: &egui::Context) {
 // ============================================================================
 
 pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
+    update_layer_thumbnails(app, ctx);
     egui::SidePanel::right("layers_panel")
         .resizable(true)
         .default_width(220.0)
@@ -333,6 +361,7 @@ pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
                     let is_active = app.active_layer_idx == idx;
                     let mut visible = layer.visible;
                     let mut opacity = layer.opacity;
+                    let thumbnail = app.ui.layer_thumbnail_textures.get(idx);
 
                     let accent = Color32::from_rgb(115, 115, 115);
                     let selected_fill = Color32::from_rgb(215, 215, 215);
@@ -352,9 +381,9 @@ pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let (eye_rect, eye_response) =
-                                    ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
+                                    ui.allocate_exact_size(Vec2::splat(24.0), egui::Sense::click());
                                 let eye_color = if is_active {
-                                    Color32::WHITE
+                                    selected_text
                                 } else {
                                     ui.visuals().text_color()
                                 };
@@ -393,6 +422,46 @@ pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
                                     });
                                 }
 
+                                let (thumbnail_rect, _) = ui.allocate_exact_size(
+                                    Vec2::splat(LAYER_THUMBNAIL_SIZE),
+                                    Sense::hover(),
+                                );
+                                ui.painter().rect_filled(
+                                    thumbnail_rect,
+                                    0.0,
+                                    ui.visuals().extreme_bg_color,
+                                );
+                                ui.painter().rect_stroke(
+                                    thumbnail_rect,
+                                    0.0,
+                                    Stroke::new(1.0_f32, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                                );
+                                if let Some(texture) = thumbnail {
+                                    ui.painter().image(
+                                        texture.id(),
+                                        thumbnail_rect.shrink(1.0),
+                                        egui::Rect::from_min_max(
+                                            egui::Pos2::ZERO,
+                                            egui::Pos2::new(1.0, 1.0),
+                                        ),
+                                        Color32::WHITE,
+                                    );
+                                }
+                                let thumbnail_response = ui.interact(
+                                    thumbnail_rect,
+                                    egui::Id::new(("layer_thumbnail", idx)),
+                                    Sense::click(),
+                                );
+                                if thumbnail_response.clicked() {
+                                    commands.push(Command::SetActiveLayer(idx));
+                                }
+                                thumbnail_response.on_hover_text("Anteprima livello");
+
+                                let (lock_rect, lock_response) =
+                                    ui.allocate_exact_size(Vec2::new(20.0, 24.0), Sense::hover());
+                                paint_reserved_lock(ui, lock_rect);
+                                lock_response.on_hover_text("Blocco livello (in futuro)");
+
                                 let name_color = if is_active {
                                     selected_text
                                 } else {
@@ -412,11 +481,12 @@ pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
                                     ui.visuals().widgets.inactive.bg_stroke
                                 });
                                 if ui
-                                    .add_sized([ui.available_width(), 28.0], name_button)
+                                    .add_sized([ui.available_width(), 48.0], name_button)
                                     .clicked()
                                 {
                                     commands.push(Command::SetActiveLayer(idx));
                                 }
+
                             });
 
                             ui.horizontal(|ui| {
@@ -495,4 +565,128 @@ pub fn show_layers_panel(app: &mut EframeApp, ctx: &egui::Context) {
                 app.execute_command(Command::MoveLayerDown(idx));
             }
         });
+}
+
+const LAYER_THUMBNAIL_SIZE: f32 = 48.0;
+
+fn update_layer_thumbnails(app: &mut EframeApp, ctx: &egui::Context) {
+    let revision = app.document_revision;
+    if app.ui.layer_thumbnail_revision == Some(revision)
+        && app.ui.layer_thumbnail_textures.len() == app.layers.len()
+    {
+        return;
+    }
+
+    let images: Vec<_> = app
+        .layers
+        .iter()
+        .map(|layer| layer_thumbnail(layer, app.width, app.height))
+        .collect();
+    for (index, image) in images.into_iter().enumerate() {
+        if let Some(texture) = app.ui.layer_thumbnail_textures.get_mut(index) {
+            texture.set(image, egui::TextureOptions::NEAREST);
+        } else {
+            app.ui.layer_thumbnail_textures.push(ctx.load_texture(
+                format!("layer_thumbnail_{index}"),
+                image,
+                egui::TextureOptions::NEAREST,
+            ));
+        }
+    }
+    app.ui.layer_thumbnail_textures.truncate(app.layers.len());
+    app.ui.layer_thumbnail_revision = Some(revision);
+}
+
+fn layer_thumbnail(layer: &crate::model::Layer, width: usize, height: usize) -> egui::ColorImage {
+    let size = LAYER_THUMBNAIL_SIZE as usize;
+    let mut image = egui::ColorImage::new([size, size], Color32::from_gray(232));
+    for y in 0..size {
+        for x in 0..size {
+            if (x / 8 + y / 8) % 2 == 1 {
+                image[(x, y)] = Color32::from_gray(205);
+            }
+        }
+    }
+
+    if width == 0 || height == 0 || layer.pixels.len() < width.saturating_mul(height) {
+        return image;
+    }
+
+    let scale = (size as f32 / width as f32).min(size as f32 / height as f32);
+    let thumbnail_width = ((width as f32 * scale).round() as usize).clamp(1, size);
+    let thumbnail_height = ((height as f32 * scale).round() as usize).clamp(1, size);
+    let offset_x = (size - thumbnail_width) / 2;
+    let offset_y = (size - thumbnail_height) / 2;
+
+    for y in 0..thumbnail_height {
+        let source_y = (y * height / thumbnail_height).min(height - 1);
+        for x in 0..thumbnail_width {
+            let source_x = (x * width / thumbnail_width).min(width - 1);
+            let source = layer.pixels[source_y * width + source_x];
+            let [red, green, blue, source_alpha] = source.to_srgba_unmultiplied();
+            let alpha = source_alpha as f32 / 255.0 * layer.opacity.clamp(0.0, 1.0);
+            let background = image[(offset_x + x, offset_y + y)];
+            let [background_red, background_green, background_blue, _] =
+                background.to_srgba_unmultiplied();
+            let blend = |foreground: u8, background: u8| {
+                (foreground as f32 * alpha + background as f32 * (1.0 - alpha)).round() as u8
+            };
+            image[(offset_x + x, offset_y + y)] = Color32::from_rgb(
+                blend(red, background_red),
+                blend(green, background_green),
+                blend(blue, background_blue),
+            );
+        }
+    }
+
+    image
+}
+
+fn paint_reserved_lock(ui: &egui::Ui, rect: egui::Rect) {
+    let color = ui.visuals().weak_text_color();
+    let stroke = Stroke::new(1.2_f32, color);
+    let body = egui::Rect::from_min_size(
+        egui::pos2(rect.center().x - 5.0, rect.center().y),
+        Vec2::new(10.0, 8.0),
+    );
+    ui.painter().rect_stroke(body, 1.0, stroke);
+    let arch = [
+        egui::pos2(body.left() + 2.0, body.top()),
+        egui::pos2(body.left() + 2.0, body.top() - 3.0),
+        egui::pos2(body.right() - 2.0, body.top() - 3.0),
+        egui::pos2(body.right() - 2.0, body.top()),
+    ];
+    ui.painter().add(egui::Shape::line(arch.to_vec(), stroke));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::layer_thumbnail;
+    use crate::model::Layer;
+    use egui::Color32;
+
+    #[test]
+    fn layer_thumbnail_fits_content_and_applies_opacity() {
+        let mut layer = Layer::new("Test", 4, 2);
+        layer
+            .pixels
+            .fill(Color32::from_rgba_unmultiplied(200, 30, 40, 128));
+        layer.opacity = 0.5;
+
+        let thumbnail = layer_thumbnail(&layer, 4, 2);
+
+        assert_eq!(thumbnail.size, [48, 48]);
+        assert_eq!(thumbnail[(24, 24)], Color32::from_rgb(224, 181, 184));
+        assert_ne!(thumbnail[(24, 0)], thumbnail[(24, 24)]);
+    }
+
+    #[test]
+    fn empty_layer_thumbnail_is_a_checkerboard() {
+        let layer = Layer::new("Vuoto", 0, 0);
+
+        let thumbnail = layer_thumbnail(&layer, 0, 0);
+
+        assert_eq!(thumbnail.size, [48, 48]);
+        assert_ne!(thumbnail[(0, 0)], thumbnail[(8, 0)]);
+    }
 }

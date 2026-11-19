@@ -22,7 +22,7 @@ impl PaintApp {
             height: self.height,
             layers: self.layers.clone(),
             active_layer_idx: self.active_layer_idx,
-            selection: self.selection,
+            selection: self.selection.clone(),
         });
         while self.undo_stack.len() > limit {
             self.undo_stack.remove(0);
@@ -37,7 +37,7 @@ impl PaintApp {
                 height: self.height,
                 layers: self.layers.clone(),
                 active_layer_idx: self.active_layer_idx,
-                selection: self.selection,
+                selection: self.selection.clone(),
             });
             self.width = prev.width;
             self.height = prev.height;
@@ -46,6 +46,8 @@ impl PaintApp {
                 .active_layer_idx
                 .min(self.layers.len().saturating_sub(1));
             self.selection = prev.selection;
+            self.moving_selection = None;
+            self.selection_tools.gesture = None;
             self.mark_document_changed();
         }
     }
@@ -57,7 +59,7 @@ impl PaintApp {
                 height: self.height,
                 layers: self.layers.clone(),
                 active_layer_idx: self.active_layer_idx,
-                selection: self.selection,
+                selection: self.selection.clone(),
             });
             self.width = next.width;
             self.height = next.height;
@@ -66,6 +68,8 @@ impl PaintApp {
                 .active_layer_idx
                 .min(self.layers.len().saturating_sub(1));
             self.selection = next.selection;
+            self.moving_selection = None;
+            self.selection_tools.gesture = None;
             self.mark_document_changed();
         }
     }
