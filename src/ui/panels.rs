@@ -30,39 +30,42 @@ use crate::model::Tool;
 pub fn show_tools_panel(app: &mut EframeApp, ctx: &egui::Context) {
     egui::SidePanel::left("tools_panel")
         .resizable(false)
-        .default_width(170.0)
+        .default_width(104.0)
         .show(ctx, |ui| {
-            ui.heading("Strumenti");
-            ui.separator();
-
-            for row in [
-                [(Tool::Select, "Selezione rettangolare", "S"), (Tool::Move, "Sposta", "M")],
-                [
-                    (Tool::EllipseSelect, "Selezione ellittica", ""),
-                    (Tool::LassoSelect, "Selezione libera", ""),
-                ],
-                [(Tool::Brush, "Pennello", "B"), (Tool::Eraser, "Gomma", "E")],
-                [(Tool::Pipette, "Contagocce", "I"), (Tool::Bucket, "Secchiello", "G")],
-                [(Tool::Line, "Linea", "L"), (Tool::Rectangle, "Rettangolo", "R")],
-            ]
-            .iter()
-            {
-                ui.horizontal(|ui| {
-                    for &(tool, label, shortcut) in row {
-                        if tool_button(ui, app.current_tool, tool, label, shortcut) {
-                            app.execute_command(Command::SetTool(tool));
+            ui.scope(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                for row in [
+                    [(Tool::Select, "Selezione rettangolare", "S"), (Tool::Move, "Sposta", "M")],
+                    [
+                        (Tool::EllipseSelect, "Selezione ellittica", ""),
+                        (Tool::LassoSelect, "Selezione libera", ""),
+                    ],
+                    [(Tool::Brush, "Pennello", "B"), (Tool::Spray, "Spray", "A")],
+                    [(Tool::Eraser, "Gomma", "E"), (Tool::Pipette, "Contagocce", "I")],
+                    [(Tool::Bucket, "Secchiello", "G"), (Tool::Line, "Linea", "L")],
+                    [
+                        (Tool::ConnectedLines, "Linee collegate", "P"),
+                        (Tool::Rectangle, "Rettangolo", "R"),
+                    ],
+                ]
+                .iter()
+                {
+                    ui.horizontal(|ui| {
+                        for &(tool, label, shortcut) in row {
+                            if tool_button(ui, app.current_tool, tool, label, shortcut) {
+                                app.execute_command(Command::SetTool(tool));
+                            }
                         }
+                    });
+                }
+
+                ui.horizontal(|ui| {
+                    if tool_button(ui, app.current_tool, Tool::Circle, "Ellisse", "C") {
+                        app.execute_command(Command::SetTool(Tool::Circle));
                     }
                 });
-            }
-
-            ui.horizontal(|ui| {
-                if tool_button(ui, app.current_tool, Tool::Circle, "Ellisse", "C") {
-                    app.execute_command(Command::SetTool(Tool::Circle));
-                }
             });
-            ui.add_space(6.0);
-            ui.add_space(6.0);
+
             if matches!(app.current_tool, Tool::Rectangle | Tool::Circle) {
                 let mut fill_shapes = app.fill_shapes;
                 if ui.checkbox(&mut fill_shapes, "Riempi forma").changed() {
@@ -71,14 +74,22 @@ pub fn show_tools_panel(app: &mut EframeApp, ctx: &egui::Context) {
             }
 
             ui.separator();
-            ui.label("Dimensione:");
             let mut brush_size = app.brush_size;
-            if ui
-                .add(egui::Slider::new(&mut brush_size, 1.0..=80.0).suffix(" px"))
-                .changed()
-            {
-                app.execute_command(Command::SetBrushSize(brush_size));
-            }
+            ui.horizontal(|ui| {
+                ui.label("⌀")
+                    .on_hover_text("Dimensione pennello e spray in pixel");
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut brush_size)
+                            .clamp_range(1.0..=80.0)
+                            .speed(1.0)
+                            .suffix(" px"),
+                    )
+                    .changed()
+                {
+                    app.execute_command(Command::SetBrushSize(brush_size));
+                }
+            });
 
             ui.add_space(10.0);
             ui.separator();
@@ -94,28 +105,83 @@ fn tool_button(
     label: &str,
     shortcut: &str,
 ) -> bool {
-    let response = ui.add_sized(
-        Vec2::splat(32.0),
-        egui::SelectableLabel::new(current_tool == tool, ""),
-    );
-    let clicked = response.clicked();
-
-    let color = if current_tool == tool {
-        ui.visuals().widgets.active.fg_stroke.color
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
+    let response = ui.interact(rect, egui::Id::new(("tool_button", label)), Sense::click());
+    let selected = current_tool == tool;
+    let visuals = ui.visuals();
+    let dark_mode = visuals.dark_mode;
+    let accent = Color32::from_rgb(61, 174, 233);
+    let pressed = response.is_pointer_button_down_on() && !selected;
+    let button_rect = if pressed {
+        rect.translate(Vec2::new(0.0, 1.0))
     } else {
-        ui.visuals().widgets.inactive.fg_stroke.color
+        rect
     };
-    paint_tool_icon(ui.painter(), response.rect.shrink(8.0), tool, color);
+    let fill = if selected {
+        if dark_mode {
+            Color32::from_rgb(43, 74, 92)
+        } else {
+            Color32::from_rgb(224, 242, 251)
+        }
+    } else if response.hovered() {
+        if dark_mode {
+            Color32::from_gray(65)
+        } else {
+            Color32::from_gray(238)
+        }
+    } else {
+        visuals.widgets.inactive.bg_fill
+    };
+    let border = if selected {
+        accent
+    } else if response.hovered() {
+        if dark_mode {
+            Color32::from_gray(145)
+        } else {
+            Color32::from_gray(165)
+        }
+    } else {
+        if dark_mode {
+            Color32::from_gray(78)
+        } else {
+            Color32::from_gray(195)
+        }
+    };
+
+    let painter = ui.painter();
+    painter.rect_filled(
+        rect.translate(Vec2::new(0.0, 1.0)),
+        0.0,
+        Color32::from_black_alpha(if dark_mode { 45 } else { 28 }),
+    );
+    painter.rect_filled(button_rect, 0.0, fill);
+    painter.rect_stroke(
+        button_rect,
+        0.0,
+        Stroke::new(if selected { 1.5_f32 } else { 1.0_f32 }, border),
+    );
+
+    let clicked = response.clicked();
+    let color = if selected {
+        if dark_mode {
+            Color32::from_rgb(133, 211, 248)
+        } else {
+            Color32::from_rgb(31, 119, 163)
+        }
+    } else {
+        visuals.text_color()
+    };
+    paint_tool_icon(painter, button_rect.shrink(7.0), tool, color);
     response.on_hover_text(format!("{label} ({shortcut})"));
     clicked
 }
 
 fn paint_tool_icon(painter: &egui::Painter, rect: egui::Rect, tool: Tool, color: Color32) {
-    let stroke = Stroke::new(1.5_f32, color);
+    let stroke = Stroke::new(1.8_f32, color);
     let center = rect.center();
     match tool {
         Tool::Select => {
-            painter.rect_stroke(rect, 1.0, stroke);
+            painter.rect_stroke(rect, 0.0, stroke);
         }
         Tool::EllipseSelect => {
             let points = (0..24)
@@ -151,6 +217,25 @@ fn paint_tool_icon(painter: &egui::Painter, rect: egui::Rect, tool: Tool, color:
             );
             painter.circle_filled(rect.left_bottom(), 2.0_f32, color);
         }
+        Tool::Spray => {
+            painter.line_segment(
+                [
+                    rect.left_bottom() + Vec2::new(1.0, -1.0),
+                    rect.center() + Vec2::new(1.0, 1.0),
+                ],
+                Stroke::new(2.0_f32, color),
+            );
+            painter.line_segment(
+                [
+                    rect.center() + Vec2::new(1.0, 1.0),
+                    rect.right_top() - Vec2::new(2.0, 1.0),
+                ],
+                stroke,
+            );
+            painter.circle_filled(rect.right_top() + Vec2::new(-1.0, 1.0), 1.0, color);
+            painter.circle_filled(rect.right_center() + Vec2::new(2.0, 0.0), 1.0, color);
+            painter.circle_filled(rect.center_top() + Vec2::new(2.0, -1.0), 1.0, color);
+        }
         Tool::Eraser => {
             painter.line_segment(
                 [rect.left_bottom(), rect.right_top()],
@@ -178,6 +263,18 @@ fn paint_tool_icon(painter: &egui::Painter, rect: egui::Rect, tool: Tool, color:
         }
         Tool::Line => {
             painter.line_segment([rect.left_bottom(), rect.right_top()], stroke);
+        }
+        Tool::ConnectedLines => {
+            let points = [
+                rect.left_bottom(),
+                rect.left_top() + Vec2::new(2.0, 1.0),
+                rect.right_center() + Vec2::new(-1.0, -1.0),
+                rect.right_top(),
+            ];
+            painter.add(egui::Shape::line(points.to_vec(), stroke));
+            for point in points {
+                painter.circle_filled(point, 1.5, color);
+            }
         }
         Tool::Rectangle => {
             painter.rect_stroke(rect, 0.0, stroke);

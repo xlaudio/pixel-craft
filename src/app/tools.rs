@@ -69,6 +69,36 @@ impl PaintApp {
         self.mark_document_changed();
     }
 
+    pub fn spray_point_on_active(&mut self, cx: f32, cy: f32) {
+        if self.layers.is_empty() || self.width == 0 || self.height == 0 {
+            return;
+        }
+
+        let spread = self.brush_size.max(4.0);
+        let droplet_count = (self.brush_size as usize * 2).clamp(16, 120);
+        let mut seed = self.spray_seed;
+        let mut next_random = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 32) as u32
+        };
+        let layer = &mut self.layers[self.active_layer_idx];
+
+        for _ in 0..droplet_count {
+            let radial_distance = ((next_random() as f32 / u32::MAX as f32).sqrt()) * spread;
+            let angle = (next_random() as f32 / u32::MAX as f32) * std::f32::consts::TAU;
+            let x = (cx + angle.cos() * radial_distance).round() as i32;
+            let y = (cy + angle.sin() * radial_distance).round() as i32;
+            if x >= 0 && x < self.width as i32 && y >= 0 && y < self.height as i32 {
+                layer.pixels[y as usize * self.width + x as usize] = self.brush_color;
+            }
+        }
+
+        self.spray_seed = seed;
+        self.mark_document_changed();
+    }
+
     pub fn draw_continuous_line(&mut self, p0: Pos2, p1: Pos2) {
         let dx = p1.x - p0.x;
         let dy = p1.y - p0.y;

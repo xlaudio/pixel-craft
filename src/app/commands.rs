@@ -133,10 +133,12 @@ pub enum Command {
     SetBrushSize(f32),
     SetFillShapes(bool),
     DrawPoint(CanvasPoint),
+    SprayPoint(CanvasPoint),
     DrawLine {
         from: CanvasPoint,
         to: CanvasPoint,
     },
+    DrawConnectedLines(Vec<CanvasPoint>),
     FloodFill {
         point: CanvasPoint,
         color: RgbaColor,
@@ -295,7 +297,16 @@ impl CommandEngine {
                     Color32::from_rgba_unmultiplied(color.red, color.green, color.blue, color.alpha)
             }
             Command::DrawPoint(point) => app.draw_point_on_active(point.x, point.y),
+            Command::SprayPoint(point) => app.spray_point_on_active(point.x, point.y),
             Command::DrawLine { from, to } => app.draw_continuous_line(from.into(), to.into()),
+            Command::DrawConnectedLines(points) => {
+                if points.len() >= 2 {
+                    app.push_undo_snapshot();
+                    for pair in points.windows(2) {
+                        app.draw_continuous_line(pair[0].into(), pair[1].into());
+                    }
+                }
+            }
             Command::FloodFill { point, color } => app.flood_fill(
                 point.x as i32,
                 point.y as i32,
@@ -385,6 +396,60 @@ mod tests {
         );
 
         assert_eq!(restored, color);
+    }
+
+    #[test]
+    fn spray_command_adds_droplets_to_the_active_layer() {
+        let mut app = PaintApp::new_headless();
+        app.width = 128;
+        app.height = 128;
+        app.layers[1].pixels = vec![Color32::TRANSPARENT; 128 * 128];
+        app.brush_size = 40.0;
+
+        CommandEngine.execute(
+            &mut app,
+            Command::SprayPoint(super::CanvasPoint { x: 64.0, y: 64.0 }),
+        );
+
+        let sprayed_pixels: Vec<_> = app.layers[1]
+            .pixels
+            .iter()
+            .enumerate()
+            .filter(|(_, pixel)| **pixel == app.brush_color)
+            .map(|(index, _)| (index % app.width, index / app.width))
+            .collect();
+        assert!(sprayed_pixels.len() > 10);
+        assert!(sprayed_pixels.iter().any(|(x, y)| {
+            let dx = *x as isize - 64;
+            let dy = *y as isize - 64;
+            dx * dx + dy * dy > 10 * 10
+        }));
+    }
+
+    #[test]
+    fn connected_lines_draw_a_polyline_and_undo_as_one_action() {
+        let mut app = PaintApp::new_headless();
+        app.width = 16;
+        app.height = 16;
+        app.layers[1].pixels = vec![Color32::TRANSPARENT; 16 * 16];
+        let mut engine = CommandEngine;
+
+        engine.execute(
+            &mut app,
+            Command::DrawConnectedLines(vec![
+                super::CanvasPoint { x: 2.0, y: 2.0 },
+                super::CanvasPoint { x: 10.0, y: 2.0 },
+                super::CanvasPoint { x: 10.0, y: 10.0 },
+            ]),
+        );
+
+        assert_eq!(app.layers[1].pixels[2 * 16 + 6], app.brush_color);
+        assert_eq!(app.layers[1].pixels[6 * 16 + 10], app.brush_color);
+        engine.execute(&mut app, Command::Undo);
+        assert!(app.layers[1]
+            .pixels
+            .iter()
+            .all(|pixel| *pixel == Color32::TRANSPARENT));
     }
 
     #[test]

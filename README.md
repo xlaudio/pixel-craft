@@ -7,7 +7,8 @@ undo/redo.
 
 ## Features
 
-- Brush, eraser, color picker, bucket fill, line, rectangle, and ellipse tools
+- Brush, spray, eraser, color picker, bucket fill, line, connected lines,
+  rectangle, and ellipse tools
 - Rectangular, elliptical, and free-form (lasso) selections
 - Move, copy, cut, delete, crop, and paste selection operations
 - Layer visibility, opacity, reordering, duplication, merging, and thumbnails
@@ -50,9 +51,11 @@ Some keyboard shortcuts include:
 | Shortcut | Action |
 | --- | --- |
 | `B` | Brush |
+| `A` | Spray |
 | `E` | Eraser |
 | `S` | Rectangular selection |
 | `M` | Move |
+| `P` | Connected lines |
 | `Ctrl+A` | Select all |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |

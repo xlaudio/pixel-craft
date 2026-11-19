@@ -45,17 +45,19 @@ impl Layer {
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Tool {
-    Select,        // Selezione rettangolare (S)
-    EllipseSelect, // Selezione ellittica
-    LassoSelect,   // Selezione libera
-    Move,          // Sposta tela o selezione (M)
-    Brush,         // Pennello a tratto continuo (B)
-    Eraser,        // Gomma da cancellare (E)
-    Pipette,       // Contagocce / Color picker (I)
-    Bucket,        // Secchiello / Riempimento flood-fill (G)
-    Line,          // Linea retta (L)
-    Rectangle,     // Rettangolo (R)
-    Circle,        // Cerchio / Ellisse (C)
+    Select,         // Selezione rettangolare (S)
+    EllipseSelect,  // Selezione ellittica
+    LassoSelect,    // Selezione libera
+    Move,           // Sposta tela o selezione (M)
+    Brush,          // Pennello a tratto continuo (B)
+    Spray,          // Aerografo / spray
+    Eraser,         // Gomma da cancellare (E)
+    Pipette,        // Contagocce / Color picker (I)
+    Bucket,         // Secchiello / Riempimento flood-fill (G)
+    Line,           // Linea retta (L)
+    ConnectedLines, // Linee collegate / polilinea
+    Rectangle,      // Rettangolo (R)
+    Circle,         // Cerchio / Ellisse (C)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -440,6 +442,7 @@ pub struct PaintApp {
     pub(crate) moving_selection: Option<MovingSelection>,
     pub(crate) selection_tools: SelectionToolManager,
     pub(crate) document_revision: u64,
+    pub(crate) spray_seed: u64,
 
     // Proprietà strumenti
     pub(crate) current_tool: Tool,

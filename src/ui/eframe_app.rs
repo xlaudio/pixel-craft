@@ -39,6 +39,7 @@ pub struct UiState {
     pub drag_start_canvas: Option<egui::Pos2>,
     pub last_canvas_pos: Option<egui::Pos2>,
     pub current_canvas_pos: Option<egui::Pos2>,
+    pub connected_line_points: Vec<egui::Pos2>,
     pub palette: Vec<Color32>,
     pub show_new_image_dialog: bool,
     pub new_image_width: usize,
@@ -113,6 +114,11 @@ impl EframeApp {
     }
 
     pub fn execute_command(&mut self, command: Command) {
+        if matches!(&command, Command::SetTool(tool) if *tool != Tool::ConnectedLines)
+            || matches!(&command, Command::Undo | Command::Redo)
+        {
+            self.ui.connected_line_points.clear();
+        }
         let reset_view_after = matches!(
             command,
             Command::NewCanvas { .. } | Command::LoadPng(_) | Command::PasteInNewWindow
@@ -172,11 +178,13 @@ impl eframe::App for EframeApp {
 
         ctx.input(|i| {
             if i.modifiers.command && i.key_pressed(Key::Z) && !i.modifiers.shift {
+                self.ui.connected_line_points.clear();
                 self.execute_command(Command::Undo);
             }
             if (i.modifiers.command && i.key_pressed(Key::Y))
                 || (i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::Z))
             {
+                self.ui.connected_line_points.clear();
                 self.execute_command(Command::Redo);
             }
             if i.modifiers.ctrl && i.key_pressed(Key::X) && self.has_selection() {
@@ -208,6 +216,9 @@ impl eframe::App for EframeApp {
             {
                 self.execute_command(Command::Deselect);
             }
+            if i.key_pressed(Key::Escape) {
+                self.ui.connected_line_points.clear();
+            }
             if i.key_pressed(Key::Delete) && self.has_selection() {
                 self.execute_command(Command::DeleteSelection);
             }
@@ -226,10 +237,12 @@ impl eframe::App for EframeApp {
                     (Key::S, Tool::Select),
                     (Key::M, Tool::Move),
                     (Key::B, Tool::Brush),
+                    (Key::A, Tool::Spray),
                     (Key::E, Tool::Eraser),
                     (Key::I, Tool::Pipette),
                     (Key::G, Tool::Bucket),
                     (Key::L, Tool::Line),
+                    (Key::P, Tool::ConnectedLines),
                     (Key::R, Tool::Rectangle),
                     (Key::C, Tool::Circle),
                 ] {

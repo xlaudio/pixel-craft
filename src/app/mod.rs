@@ -108,6 +108,7 @@ impl PaintApp {
             moving_selection: None,
             selection_tools: Default::default(),
             document_revision: 0,
+            spray_seed: 0x9E37_79B9_7F4A_7C15,
             current_tool: Tool::Brush,
             brush_color: Color32::from_rgb(200, 50, 50),
             background_color: Color32::WHITE,

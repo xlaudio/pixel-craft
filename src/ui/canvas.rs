@@ -265,13 +265,30 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                                     color: fill_color.into(),
                                 });
                             }
-                            Tool::Brush | Tool::Eraser => {
+                            Tool::Brush | Tool::Eraser | Tool::Spray => {
                                 app.execute_command(Command::PushUndoSnapshot);
                                 app.ui.is_drawing = true;
                                 app.ui.drag_start_canvas = None;
                                 app.ui.current_canvas_pos = None;
                                 app.ui.last_canvas_pos = Some(c_pos);
-                                app.execute_command(Command::DrawPoint(c_pos.into()));
+                                if app.current_tool == Tool::Spray {
+                                    app.execute_command(Command::SprayPoint(c_pos.into()));
+                                } else {
+                                    app.execute_command(Command::DrawPoint(c_pos.into()));
+                                }
+                            }
+                            Tool::ConnectedLines => {
+                                if response.clicked_by(egui::PointerButton::Primary) {
+                                    app.ui.connected_line_points.push(c_pos);
+                                    if response.double_clicked_by(egui::PointerButton::Primary) {
+                                        let points =
+                                            std::mem::take(&mut app.ui.connected_line_points)
+                                                .into_iter()
+                                                .map(Into::into)
+                                                .collect();
+                                        app.execute_command(Command::DrawConnectedLines(points));
+                                    }
+                                }
                             }
                             Tool::Line | Tool::Rectangle | Tool::Circle => {
                                 app.execute_command(Command::PushUndoSnapshot);
@@ -292,12 +309,16 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                     );
 
                     match app.current_tool {
-                        Tool::Brush | Tool::Eraser => {
+                        Tool::Brush | Tool::Eraser | Tool::Spray => {
                             if let Some(last_pos) = app.ui.last_canvas_pos {
-                                app.execute_command(Command::DrawLine {
-                                    from: last_pos.into(),
-                                    to: c_pos.into(),
-                                });
+                                if app.current_tool == Tool::Spray {
+                                    app.execute_command(Command::SprayPoint(c_pos.into()));
+                                } else {
+                                    app.execute_command(Command::DrawLine {
+                                        from: last_pos.into(),
+                                        to: c_pos.into(),
+                                    });
+                                }
                             } else {
                                 app.execute_command(Command::DrawPoint(c_pos.into()));
                             }
@@ -310,6 +331,7 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                         | Tool::EllipseSelect
                         | Tool::LassoSelect
                         | Tool::Line
+                        | Tool::ConnectedLines
                         | Tool::Rectangle
                         | Tool::Circle => {
                             app.ui.current_canvas_pos = Some(c_pos);
@@ -370,6 +392,24 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                 app.ui.drag_start_canvas = None;
                 app.ui.last_canvas_pos = None;
                 app.ui.current_canvas_pos = None;
+            }
+        }
+
+        if app.current_tool == Tool::ConnectedLines && !app.ui.connected_line_points.is_empty() {
+            let points = &app.ui.connected_line_points;
+            for pair in points.windows(2) {
+                painter.line_segment(
+                    [canvas_to_screen(pair[0]), canvas_to_screen(pair[1])],
+                    Stroke::new((app.brush_size * app.ui.zoom).max(1.0), app.brush_color),
+                );
+            }
+            if let (Some(last), Some(pointer)) = (points.last(), response.hover_pos()) {
+                if canvas_screen_rect.contains(pointer) {
+                    painter.line_segment(
+                        [canvas_to_screen(*last), pointer],
+                        Stroke::new((app.brush_size * app.ui.zoom).max(1.0), app.brush_color),
+                    );
+                }
             }
         }
 
