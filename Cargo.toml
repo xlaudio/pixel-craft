@@ -11,3 +11,5 @@ image = "0.24"
 bytemuck = "1.14"
 rfd = "0.14"
 printpdf = { version = "0.7", default-features = false, features = ["embedded_images"] }
+quick-xml = "0.41"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }

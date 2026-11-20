@@ -145,7 +145,7 @@ impl PaintApp {
     }
 }
 
-fn composite_pixel(destination: Color32, source: Color32, opacity: f32) -> Color32 {
+pub(super) fn composite_pixel(destination: Color32, source: Color32, opacity: f32) -> Color32 {
     let [source_red, source_green, source_blue, source_alpha] = source.to_srgba_unmultiplied();
     let [destination_red, destination_green, destination_blue, destination_alpha] =
         destination.to_srgba_unmultiplied();

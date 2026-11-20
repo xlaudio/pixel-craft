@@ -14,7 +14,7 @@ undo/redo.
 - Layer visibility, opacity, reordering, duplication, merging, and thumbnails
 - Undo and redo for document edits
 - Canvas resize, flips, color inversion, and custom-angle image rotation
-- PNG image workflows and PDF export
+- PNG image workflows, layered OpenRaster (`.ora`) import/export, and PDF export
 - Light, dark, and system appearance options
 
 ## Getting started
@@ -61,7 +61,11 @@ Some keyboard shortcuts include:
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
 | `Delete` | Delete the current selection |
 | `Ctrl+0` | Reset zoom |
-| `Ctrl+S` | Save as PNG |
+| `Ctrl+S` | Save (format follows the current filename) |
+
+Use **File → Save as OpenRaster...** to export an editable `.ora` document
+with its layer order, visibility, and opacity preserved. **Save** and `Ctrl+S`
+keep using OpenRaster when the current filename ends in `.ora`.
 
 ## Project structure
 

@@ -59,13 +59,14 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
             app.ui.show_new_image_dialog = true;
             ui.close_menu();
         }
-        if ui.button("📂 Apri PNG...").clicked() {
+        if ui.button("📂 Apri...").clicked() {
             if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Immagini", &["png", "jpg", "jpeg"])
+            .add_filter("Documento OpenRaster", &["ora"])
+            .add_filter("Immagine PNG", &["png"])
                 .pick_file()
             {
                 if let Some(path_str) = path.to_str() {
-                    app.execute_command(Command::LoadPng(path_str.to_owned()));
+                    app.execute_command(open_command_for_path(path_str.to_owned()));
                 }
             }
             ui.close_menu();
@@ -76,16 +77,17 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
                 .current_filepath
                 .clone()
                 .unwrap_or_else(|| "output.png".to_string());
-            app.execute_command(Command::SavePng(path));
+            app.execute_command(save_command_for_path(path));
             ui.close_menu();
         }
         if ui.button("💾 Salva con nome...").clicked() {
             if let Some(path) = rfd::FileDialog::new()
+            .add_filter("Documento OpenRaster", &["ora"])
                 .add_filter("Immagine PNG", &["png"])
                 .save_file()
             {
                 if let Some(path_str) = path.to_str() {
-                    app.execute_command(Command::SavePng(path_str.to_owned()));
+                    app.execute_command(save_command_for_path(path_str.to_owned()));
                 }
             }
             ui.close_menu();
@@ -99,6 +101,30 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     });
+}
+
+fn save_command_for_path(path: String) -> Command {
+    if std::path::Path::new(&path)
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("ora"))
+    {
+        Command::SaveOpenRaster(path)
+    } else {
+        Command::SavePng(path)
+    }
+}
+
+fn open_command_for_path(path: String) -> Command {
+    if std::path::Path::new(&path)
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("ora"))
+    {
+        Command::LoadOpenRaster(path)
+    } else {
+        Command::LoadPng(path)
+    }
 }
 
 // ============================================================================

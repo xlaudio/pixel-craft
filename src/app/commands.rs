@@ -153,7 +153,9 @@ pub enum Command {
     SetForegroundColor(RgbaColor),
     SetBackgroundColor(RgbaColor),
     SavePng(String),
+    SaveOpenRaster(String),
     LoadPng(String),
+    LoadOpenRaster(String),
     SavePdf(String),
     CopySelectionToFile(String),
     PasteFromFile(String),
@@ -321,7 +323,9 @@ impl CommandEngine {
                 app.finish_selection_move(Vec2::new(delta.x, delta.y))
             }
             Command::SavePng(path) => app.save_to_png(&path, &mut notices),
+            Command::SaveOpenRaster(path) => app.save_to_openraster(&path, &mut notices),
             Command::LoadPng(path) => app.load_from_png(&path, &mut notices),
+            Command::LoadOpenRaster(path) => app.load_from_openraster(&path, &mut notices),
             Command::SavePdf(path) => app.save_to_pdf(&path, &mut notices),
             Command::CopySelectionToFile(path) => app.copy_to_file(&path, &mut notices),
             Command::PasteFromFile(path) => app.paste_from_file(&path, &mut notices),

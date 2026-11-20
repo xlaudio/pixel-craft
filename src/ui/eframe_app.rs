@@ -227,7 +227,16 @@ impl eframe::App for EframeApp {
                     .current_filepath
                     .clone()
                     .unwrap_or_else(|| "output.png".to_string());
-                self.execute_command(Command::SavePng(path));
+                let command = if std::path::Path::new(&path)
+                    .extension()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("ora"))
+                {
+                    Command::SaveOpenRaster(path)
+                } else {
+                    Command::SavePng(path)
+                };
+                self.execute_command(command);
             }
             if i.modifiers.command && i.key_pressed(Key::Num0) {
                 self.reset_view();
