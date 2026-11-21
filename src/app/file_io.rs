@@ -14,6 +14,7 @@ use std::io::{Cursor, Read, Seek, Write};
 use zip::write::FileOptions;
 
 use super::document::{composite_pixel, valid_canvas_dimensions};
+use super::export::{ExportManager, ExportOptions, RenderedImage};
 use crate::model::{ClipboardData, Layer, PaintApp};
 
 const MAX_OPENRASTER_MEMBER_SIZE: u64 = 512 * 1024 * 1024;
@@ -273,23 +274,7 @@ fn escape_xml_attribute(value: &str) -> String {
 }
 
 fn encode_png(width: usize, height: usize, pixels: &[Color32]) -> Result<Vec<u8>, String> {
-    let pixel_count = width
-        .checked_mul(height)
-        .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?;
-    let byte_count = pixel_count
-        .checked_mul(4)
-        .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?;
-    let mut rgba = vec![0; byte_count];
-    for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
-        destination.copy_from_slice(&source.to_srgba_unmultiplied());
-    }
-    let image = image::RgbaImage::from_raw(width as u32, height as u32, rgba)
-        .ok_or_else(|| "Impossibile preparare un livello OpenRaster.".to_string())?;
-    let mut output = Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(image)
-        .write_to(&mut output, image::ImageOutputFormat::Png)
-        .map_err(|error| error.to_string())?;
-    Ok(output.into_inner())
+    ExportManager::encode_png(width, height, pixels)
 }
 
 fn encode_openraster(
@@ -383,6 +368,37 @@ fn encode_pdf(width: usize, height: usize, pixels: Vec<u8>) -> Result<Vec<u8>, S
 }
 
 impl PaintApp {
+    pub fn render_for_export(&self) -> Result<RenderedImage, String> {
+        let image = self.composite();
+        RenderedImage::new(self.width, self.height, image.as_raw().to_vec())
+    }
+
+    fn save_rendered(
+        &mut self,
+        path: &str,
+        options: ExportOptions,
+        notices: &mut Vec<String>,
+    ) {
+        let rendered = match self.render_for_export() {
+            Ok(rendered) => rendered,
+            Err(error) => {
+                eprintln!("Errore durante la preparazione dell'immagine: {}", error);
+                notices.push(format!("Errore salvataggio: {}", error));
+                return;
+            }
+        };
+        if let Err(error) =
+            ExportManager::new().export_rendered(path, &rendered, options)
+        {
+            eprintln!("Errore durante il salvataggio: {}", error);
+            notices.push(format!("Errore salvataggio: {}", error));
+        } else {
+            self.current_filepath = Some(path.to_string());
+            notices.push(format!("Salvato in {}", path));
+            println!("Immagine salvata in: {}", path);
+        }
+    }
+
     pub fn save_to_openraster(&mut self, path: &str, notices: &mut Vec<String>) {
         let mut output_path = std::path::PathBuf::from(path);
         if !output_path
@@ -529,21 +545,19 @@ impl PaintApp {
     }
 
     pub fn save_to_png(&mut self, path: &str, notices: &mut Vec<String>) {
-        let img_data = self.composite();
-        if let Err(e) = image::save_buffer(
-            path,
-            img_data.as_raw(),
-            self.width as u32,
-            self.height as u32,
-            image::ColorType::Rgba8,
-        ) {
-            eprintln!("Errore durante il salvataggio: {}", e);
-            notices.push(format!("Errore salvataggio: {}", e));
-        } else {
-            self.current_filepath = Some(path.to_string());
-            notices.push(format!("Salvato in {}", path));
-            println!("Immagine salvata in: {}", path);
-        }
+        self.save_rendered(path, ExportOptions::png(), notices);
+    }
+
+    pub fn save_to_jpeg(&mut self, path: &str, notices: &mut Vec<String>) {
+        self.save_rendered(path, ExportOptions::jpeg(), notices);
+    }
+
+    pub fn save_to_bmp(&mut self, path: &str, notices: &mut Vec<String>) {
+        self.save_rendered(path, ExportOptions::bmp(), notices);
+    }
+
+    pub fn save_to_webp(&mut self, path: &str, notices: &mut Vec<String>) {
+        self.save_rendered(path, ExportOptions::webp(), notices);
     }
 
     pub fn copy_to_file(&mut self, path: &str, notices: &mut Vec<String>) {
@@ -566,7 +580,13 @@ impl PaintApp {
                         buffer.extend_from_slice(&[p.r(), p.g(), p.b(), p.a()]);
                     }
                 }
-                match image::save_buffer(path, &buffer, w, h, image::ColorType::Rgba8) {
+                match ExportManager::new().export_rgba_to_file(
+                    path,
+                    w as usize,
+                    h as usize,
+                    &buffer,
+                    ExportOptions::png(),
+                ) {
                     Ok(()) => notices.push("Selezione salvata su file".to_string()),
                     Err(error) => {
                         let message = format!("Impossibile salvare la selezione: {error}");

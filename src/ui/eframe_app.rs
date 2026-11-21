@@ -227,12 +227,20 @@ impl eframe::App for EframeApp {
                     .current_filepath
                     .clone()
                     .unwrap_or_else(|| "output.png".to_string());
-                let command = if std::path::Path::new(&path)
+                let extension = std::path::Path::new(&path)
                     .extension()
                     .and_then(std::ffi::OsStr::to_str)
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("ora"))
-                {
+                    .unwrap_or("");
+                let command = if extension.eq_ignore_ascii_case("ora") {
                     Command::SaveOpenRaster(path)
+                } else if extension.eq_ignore_ascii_case("jpg")
+                    || extension.eq_ignore_ascii_case("jpeg")
+                {
+                    Command::SaveJpeg(path)
+                } else if extension.eq_ignore_ascii_case("bmp") {
+                    Command::SaveBmp(path)
+                } else if extension.eq_ignore_ascii_case("webp") {
+                    Command::SaveWebP(path)
                 } else {
                     Command::SavePng(path)
                 };

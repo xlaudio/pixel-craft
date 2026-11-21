@@ -5,11 +5,13 @@
 
 pub mod commands;
 mod document;
+pub mod export;
 mod file_io;
 mod history;
 mod tools;
 
 pub use commands::{Command, CommandEngine};
+pub use export::{ExportFormat, ExportManager, ExportOptions, RenderedImage};
 
 use egui::Color32;
 use std::collections::VecDeque;

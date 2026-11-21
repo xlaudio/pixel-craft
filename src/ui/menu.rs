@@ -63,6 +63,9 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
             if let Some(path) = rfd::FileDialog::new()
             .add_filter("Documento OpenRaster", &["ora"])
             .add_filter("Immagine PNG", &["png"])
+            .add_filter("Immagine JPEG", &["jpg", "jpeg"])
+            .add_filter("Immagine BMP", &["bmp"])
+            .add_filter("Immagine JPEG", &["jpg", "jpeg"])
                 .pick_file()
             {
                 if let Some(path_str) = path.to_str() {
@@ -84,7 +87,10 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
             if let Some(path) = rfd::FileDialog::new()
             .add_filter("Documento OpenRaster", &["ora"])
                 .add_filter("Immagine PNG", &["png"])
-                .save_file()
+                    .add_filter("Immagine JPEG", &["jpg", "jpeg"])
+                    .add_filter("Immagine BMP", &["bmp"])
+                    .add_filter("Immagine WebP", &["webp"])
+                    .save_file()
             {
                 if let Some(path_str) = path.to_str() {
                     app.execute_command(save_command_for_path(path_str.to_owned()));
@@ -104,12 +110,18 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
 }
 
 fn save_command_for_path(path: String) -> Command {
-    if std::path::Path::new(&path)
+    let extension = std::path::Path::new(&path)
         .extension()
         .and_then(std::ffi::OsStr::to_str)
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("ora"))
-    {
+        .unwrap_or("");
+    if extension.eq_ignore_ascii_case("ora") {
         Command::SaveOpenRaster(path)
+    } else if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+        Command::SaveJpeg(path)
+    } else if extension.eq_ignore_ascii_case("bmp") {
+        Command::SaveBmp(path)
+    } else if extension.eq_ignore_ascii_case("webp") {
+        Command::SaveWebP(path)
     } else {
         Command::SavePng(path)
     }
