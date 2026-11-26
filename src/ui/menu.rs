@@ -61,11 +61,11 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
         }
         if ui.button("📂 Apri...").clicked() {
             if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Documento OpenRaster", &["ora"])
-            .add_filter("Immagine PNG", &["png"])
-            .add_filter("Immagine JPEG", &["jpg", "jpeg"])
-            .add_filter("Immagine BMP", &["bmp"])
-            .add_filter("Immagine JPEG", &["jpg", "jpeg"])
+                .add_filter("Documento OpenRaster", &["ora"])
+                .add_filter("Immagine PNG", &["png"])
+                .add_filter("Immagine JPEG", &["jpg", "jpeg"])
+                .add_filter("Immagine BMP", &["bmp"])
+                .add_filter("Immagine JPEG", &["jpg", "jpeg"])
                 .pick_file()
             {
                 if let Some(path_str) = path.to_str() {
@@ -85,12 +85,12 @@ pub fn show_menu_file(app: &mut EframeApp, ui: &mut egui::Ui, ctx: &egui::Contex
         }
         if ui.button("💾 Salva con nome...").clicked() {
             if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Documento OpenRaster", &["ora"])
+                .add_filter("Documento OpenRaster", &["ora"])
                 .add_filter("Immagine PNG", &["png"])
-                    .add_filter("Immagine JPEG", &["jpg", "jpeg"])
-                    .add_filter("Immagine BMP", &["bmp"])
-                    .add_filter("Immagine WebP", &["webp"])
-                    .save_file()
+                .add_filter("Immagine JPEG", &["jpg", "jpeg"])
+                .add_filter("Immagine BMP", &["bmp"])
+                .add_filter("Immagine WebP", &["webp"])
+                .save_file()
             {
                 if let Some(path_str) = path.to_str() {
                     app.execute_command(save_command_for_path(path_str.to_owned()));

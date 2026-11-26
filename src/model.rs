@@ -22,6 +22,16 @@ pub struct Layer {
     pub visible: bool,
     pub opacity: f32, // 0.0 ..= 1.0
     pub pixels: Vec<Color32>,
+    pub text_data: Option<TextLayerData>,
+}
+
+#[derive(Clone)]
+pub struct TextLayerData {
+    pub content: String,
+    pub pos: Pos2,
+    pub font_size: f32,
+    pub font_family: String,
+    pub color: Color32,
 }
 
 impl Layer {
@@ -31,6 +41,7 @@ impl Layer {
             visible: true,
             opacity: 1.0,
             pixels: vec![Color32::TRANSPARENT; width * height],
+            text_data: None,
         }
     }
 
@@ -58,6 +69,7 @@ pub enum Tool {
     ConnectedLines, // Linee collegate / polilinea
     Rectangle,      // Rettangolo (R)
     Circle,         // Cerchio / Ellisse (C)
+    Text,           // Testo (T)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

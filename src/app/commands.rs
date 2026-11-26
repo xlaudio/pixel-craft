@@ -294,8 +294,20 @@ impl CommandEngine {
             Command::SetBrushSize(size) => app.brush_size = size.clamp(1.0, 80.0),
             Command::SetFillShapes(fill) => app.fill_shapes = fill,
             Command::SetForegroundColor(color) => {
-                app.brush_color =
-                    Color32::from_rgba_unmultiplied(color.red, color.green, color.blue, color.alpha)
+                app.brush_color = Color32::from_rgba_unmultiplied(
+                    color.red,
+                    color.green,
+                    color.blue,
+                    color.alpha,
+                );
+                let text_update = app
+                    .layers
+                    .get(app.active_layer_idx)
+                    .and_then(|layer| layer.text_data.as_ref())
+                    .map(|data| (data.content.clone(), data.font_size, data.font_family.clone()));
+                if let Some((content, font_size, font_family)) = text_update {
+                    app.update_text_edit(&content, font_size, &font_family, app.brush_color);
+                }
             }
             Command::SetBackgroundColor(color) => {
                 app.background_color =

@@ -116,6 +116,7 @@ impl PaintApp {
                 visible: true,
                 opacity: 1.0,
                 pixels,
+                text_data: None,
             },
         );
         self.active_layer_idx = if self.active_layer_idx > index {

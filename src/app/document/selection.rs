@@ -174,6 +174,9 @@ impl PaintApp {
                     }
                 }
             }
+            if let Some(data) = &mut layer.text_data {
+                data.pos += Vec2::new(x as f32 - moving.x as f32, y as f32 - moving.y as f32);
+            }
             for row in 0..moving.height {
                 for col in 0..moving.width {
                     let mask_index = row * moving.width + col;
@@ -375,6 +378,7 @@ mod tests {
                 visible: true,
                 opacity: 1.0,
                 pixels: vec![Color32::WHITE; 4],
+                text_data: None,
             },
             Layer {
                 name: "Disegno".to_string(),
@@ -386,6 +390,7 @@ mod tests {
                     Color32::from_gray(2),
                     Color32::from_gray(3),
                 ],
+                text_data: None,
             },
         ];
         app.selection = Some(SelectionRegion::Rectangle(Rect::from_min_size(

@@ -120,30 +120,42 @@ impl ExportManager {
         match options.format {
             ExportFormat::Png => Self::encode_png(width, height, pixels),
             ExportFormat::Jpeg => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
                 Self::encode_jpeg(width, height, &rgba)
             }
             ExportFormat::Bmp => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
                 Self::encode_bmp(width, height, &rgba)
             }
             ExportFormat::WebP => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
@@ -162,10 +174,14 @@ impl ExportManager {
     ) -> Result<(), String> {
         match options.format {
             ExportFormat::Png => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
@@ -179,30 +195,42 @@ impl ExportManager {
                 .map_err(|error| error.to_string())
             }
             ExportFormat::Jpeg => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
                 Self::encode_jpeg_to_file(path, width, height, &rgba)
             }
             ExportFormat::Bmp => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
                 Self::encode_bmp_to_file(path, width, height, &rgba)
             }
             ExportFormat::WebP => {
-                let mut rgba = vec![0_u8; width
-                    .checked_mul(height)
-                    .and_then(|count| count.checked_mul(4))
-                    .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?];
+                let mut rgba =
+                    vec![
+                        0_u8;
+                        width
+                            .checked_mul(height)
+                            .and_then(|count| count.checked_mul(4))
+                            .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?
+                    ];
                 for (destination, source) in rgba.chunks_exact_mut(4).zip(pixels) {
                     destination.copy_from_slice(&source.to_srgba_unmultiplied());
                 }
@@ -265,11 +293,7 @@ impl ExportManager {
         Ok(rgb)
     }
 
-    fn encode_jpeg(
-        width: usize,
-        height: usize,
-        rgba: &[u8],
-    ) -> Result<Vec<u8>, String> {
+    fn encode_jpeg(width: usize, height: usize, rgba: &[u8]) -> Result<Vec<u8>, String> {
         let rgb = Self::rgb_from_rgba(width, height, rgba)?;
         let image = image::RgbImage::from_raw(width as u32, height as u32, rgb)
             .ok_or_else(|| "Impossibile preparare l'immagine JPEG.".to_string())?;
@@ -295,11 +319,7 @@ impl ExportManager {
             .map_err(|error| error.to_string())
     }
 
-    fn encode_bmp(
-        width: usize,
-        height: usize,
-        rgba: &[u8],
-    ) -> Result<Vec<u8>, String> {
+    fn encode_bmp(width: usize, height: usize, rgba: &[u8]) -> Result<Vec<u8>, String> {
         let rgb = Self::rgb_from_rgba(width, height, rgba)?;
         let image = image::RgbImage::from_raw(width as u32, height as u32, rgb)
             .ok_or_else(|| "Impossibile preparare l'immagine BMP.".to_string())?;
@@ -325,11 +345,7 @@ impl ExportManager {
             .map_err(|error| error.to_string())
     }
 
-    fn encode_webp(
-        width: usize,
-        height: usize,
-        rgba: &[u8],
-    ) -> Result<Vec<u8>, String> {
+    fn encode_webp(width: usize, height: usize, rgba: &[u8]) -> Result<Vec<u8>, String> {
         let encoder = webp::Encoder::from_rgba(rgba, width as u32, height as u32);
         let encoded = encoder.encode_lossless();
         Ok((&*encoded).to_vec())
@@ -345,11 +361,7 @@ impl ExportManager {
         std::fs::write(path, encoded).map_err(|error| error.to_string())
     }
 
-    pub fn encode_png(
-        width: usize,
-        height: usize,
-        pixels: &[Color32],
-    ) -> Result<Vec<u8>, String> {
+    pub fn encode_png(width: usize, height: usize, pixels: &[Color32]) -> Result<Vec<u8>, String> {
         let pixel_count = width
             .checked_mul(height)
             .ok_or_else(|| "Dimensioni immagine non valide.".to_string())?;

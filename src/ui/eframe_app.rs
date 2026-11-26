@@ -40,6 +40,11 @@ pub struct UiState {
     pub last_canvas_pos: Option<egui::Pos2>,
     pub current_canvas_pos: Option<egui::Pos2>,
     pub connected_line_points: Vec<egui::Pos2>,
+    pub text_content: String,
+    pub text_editing: bool,
+    pub text_edit_layer: Option<usize>,
+    pub text_font_size: f32,
+    pub text_font_family: String,
     pub palette: Vec<Color32>,
     pub show_new_image_dialog: bool,
     pub new_image_width: usize,
@@ -63,6 +68,8 @@ impl UiState {
         let mut state = Self {
             appearance: Appearance::System,
             zoom: 1.0,
+            text_font_size: 20.0,
+            text_font_family: "DejaVu Sans".to_string(),
             new_image_width: width,
             new_image_height: height,
             resize_image_width: width,
@@ -99,6 +106,17 @@ impl DerefMut for EframeApp {
 }
 
 impl EframeApp {
+    pub fn commit_text_editor(&mut self) -> bool {
+        if !self.ui.text_editing {
+            return false;
+        }
+        self.document.commit_text_edit();
+        self.ui.text_editing = false;
+        self.ui.text_edit_layer = None;
+        self.ui.text_content.clear();
+        true
+    }
+
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let document = PaintApp::new_headless();
         let mut app = Self::from_document(document);
@@ -114,6 +132,9 @@ impl EframeApp {
     }
 
     pub fn execute_command(&mut self, command: Command) {
+        if self.ui.text_editing {
+            self.commit_text_editor();
+        }
         if matches!(&command, Command::SetTool(tool) if *tool != Tool::ConnectedLines)
             || matches!(&command, Command::Undo | Command::Redo)
         {
@@ -177,40 +198,42 @@ impl eframe::App for EframeApp {
         self.apply_appearance(ctx, frame.info().system_theme);
 
         ctx.input(|i| {
-            if i.modifiers.command && i.key_pressed(Key::Z) && !i.modifiers.shift {
+            let text_editing = self.ui.text_editing;
+            if !text_editing && i.modifiers.command && i.key_pressed(Key::Z) && !i.modifiers.shift {
                 self.ui.connected_line_points.clear();
                 self.execute_command(Command::Undo);
             }
-            if (i.modifiers.command && i.key_pressed(Key::Y))
+            if !text_editing && ((i.modifiers.command && i.key_pressed(Key::Y))
                 || (i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::Z))
-            {
+            ) {
                 self.ui.connected_line_points.clear();
                 self.execute_command(Command::Redo);
             }
-            if i.modifiers.ctrl && i.key_pressed(Key::X) && self.has_selection() {
+            if !text_editing && i.modifiers.ctrl && i.key_pressed(Key::X) && self.has_selection() {
                 self.execute_command(Command::CutSelection);
             }
-            if i.modifiers.ctrl && i.key_pressed(Key::C) && self.has_selection() {
+            if !text_editing && i.modifiers.ctrl && i.key_pressed(Key::C) && self.has_selection() {
                 self.execute_command(Command::CopySelection);
             }
-            if i.modifiers.ctrl && i.key_pressed(Key::V) && !i.modifiers.shift {
+            if !text_editing && i.modifiers.ctrl && i.key_pressed(Key::V) && !i.modifiers.shift {
                 self.execute_command(if self.clipboard.is_some() {
                     Command::Paste
                 } else {
                     Command::PasteFromSystemClipboard
                 });
             }
-            if i.modifiers.ctrl
+            if !text_editing && i.modifiers.ctrl
                 && i.modifiers.shift
                 && i.key_pressed(Key::V)
                 && self.clipboard.is_some()
             {
                 self.execute_command(Command::PasteInNewWindow);
             }
-            if i.modifiers.command && i.key_pressed(Key::A) && !i.modifiers.shift {
+            if !text_editing && i.modifiers.command && i.key_pressed(Key::A) && !i.modifiers.shift {
                 self.execute_command(Command::SelectAll);
             }
-            if ((i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::A))
+            if !text_editing
+                && ((i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::A))
                 || i.key_pressed(Key::Escape))
                 && self.has_selection()
             {
@@ -219,7 +242,7 @@ impl eframe::App for EframeApp {
             if i.key_pressed(Key::Escape) {
                 self.ui.connected_line_points.clear();
             }
-            if i.key_pressed(Key::Delete) && self.has_selection() {
+            if !text_editing && i.key_pressed(Key::Delete) && self.has_selection() {
                 self.execute_command(Command::DeleteSelection);
             }
             if i.modifiers.command && i.key_pressed(Key::S) {
@@ -249,7 +272,9 @@ impl eframe::App for EframeApp {
             if i.modifiers.command && i.key_pressed(Key::Num0) {
                 self.reset_view();
             }
-            if !i.modifiers.command {
+            // While the text editor owns the keyboard, letters such as T/S/C
+            // must remain text and must not activate the global tool shortcuts.
+            if !self.ui.text_editing && !i.modifiers.command {
                 for (key, tool) in [
                     (Key::S, Tool::Select),
                     (Key::M, Tool::Move),
@@ -262,6 +287,7 @@ impl eframe::App for EframeApp {
                     (Key::P, Tool::ConnectedLines),
                     (Key::R, Tool::Rectangle),
                     (Key::C, Tool::Circle),
+                    (Key::T, Tool::Text),
                 ] {
                     if i.key_pressed(key) {
                         self.execute_command(Command::SetTool(tool));

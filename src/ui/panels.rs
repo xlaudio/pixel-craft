@@ -63,7 +63,60 @@ pub fn show_tools_panel(app: &mut EframeApp, ctx: &egui::Context) {
                     if tool_button(ui, app.current_tool, Tool::Circle, "Ellisse", "C") {
                         app.execute_command(Command::SetTool(Tool::Circle));
                     }
+                    if tool_button(ui, app.current_tool, Tool::Text, "Testo", "T") {
+                        app.execute_command(Command::SetTool(Tool::Text));
+                    }
                 });
+
+            if app.current_tool == Tool::Text {
+                ui.separator();
+                ui.label("Font");
+                let font_families = ["DejaVu Sans", "Liberation Sans", "Noto Sans", "Arial"];
+                let mut font_family = app.ui.text_font_family.clone();
+                egui::ComboBox::from_id_source("text_font_family")
+                    .selected_text(&font_family)
+                    .show_ui(ui, |ui| {
+                        for family in font_families {
+                            ui.selectable_value(&mut font_family, family.to_string(), family);
+                        }
+                    });
+                if font_family != app.ui.text_font_family {
+                    app.ui.text_font_family = font_family.clone();
+                    let text_update = app.ui.text_edit_layer.and_then(|index| {
+                        app.document
+                            .layers
+                            .get(index)
+                            .and_then(|layer| layer.text_data.as_ref())
+                            .map(|data| (data.content.clone(), data.font_size, data.color))
+                    });
+                    if let Some((content, font_size, color)) = text_update {
+                        app.update_text_edit(&content, font_size, &font_family, color);
+                    }
+                }
+                ui.label("Dimensione font");
+                let mut font_size = app.ui.text_font_size;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut font_size)
+                            .clamp_range(6.0..=400.0)
+                            .speed(1.0)
+                            .suffix(" px"),
+                    )
+                    .changed()
+                {
+                    app.ui.text_font_size = font_size;
+                    let text_update = app.ui.text_edit_layer.and_then(|index| {
+                        app.document
+                            .layers
+                            .get(index)
+                            .and_then(|layer| layer.text_data.as_ref())
+                            .map(|data| (data.content.clone(), data.font_family.clone(), data.color))
+                    });
+                    if let Some((content, font_family, color)) = text_update {
+                        app.update_text_edit(&content, font_size, &font_family, color);
+                    }
+                }
+            }
             });
 
             if matches!(app.current_tool, Tool::Rectangle | Tool::Circle) {
@@ -281,6 +334,15 @@ fn paint_tool_icon(painter: &egui::Painter, rect: egui::Rect, tool: Tool, color:
         }
         Tool::Circle => {
             painter.circle_stroke(center, rect.width().min(rect.height()) / 2.0, stroke);
+        }
+        Tool::Text => {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "T",
+                egui::FontId::proportional(18.0),
+                color,
+            );
         }
     }
 }

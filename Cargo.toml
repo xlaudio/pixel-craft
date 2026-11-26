@@ -14,3 +14,4 @@ printpdf = { version = "0.7", default-features = false, features = ["embedded_im
 quick-xml = "0.41"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 webp = "0.3"
+ab_glyph = "0.2"

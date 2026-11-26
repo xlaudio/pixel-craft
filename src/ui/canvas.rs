@@ -265,6 +265,23 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                                     color: fill_color.into(),
                                 });
                             }
+                            Tool::Text => {
+                                if app.ui.text_editing {
+                                    app.commit_text_editor();
+                                } else {
+                                    let font_size = app.ui.text_font_size;
+                                    let font_family = app.ui.text_font_family.clone();
+                                    let index = app.begin_text_edit(c_pos, font_size, &font_family);
+                                    app.ui.text_edit_layer = Some(index);
+                                    app.ui.text_editing = true;
+                                    app.ui.text_content = app
+                                        .layers
+                                        .get(index)
+                                        .and_then(|layer| layer.text_data.as_ref())
+                                        .map(|data| data.content.clone())
+                                        .unwrap_or_default();
+                                }
+                            }
                             Tool::Brush | Tool::Eraser | Tool::Spray => {
                                 app.execute_command(Command::PushUndoSnapshot);
                                 app.ui.is_drawing = true;
@@ -481,12 +498,76 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
                             ));
                         }
                     }
+                    Tool::Text => {}
                     _ => {}
                 }
             }
         }
 
-        // 7. Overlay selezione attiva
+        // 7. Editor testo
+        if app.ui.text_editing {
+            let text_edit_state = app.ui.text_edit_layer.and_then(|index| {
+                app.layers
+                    .get(index)
+                    .and_then(|layer| layer.text_data.clone())
+            });
+            if let Some(data) = text_edit_state {
+                let screen_pos = canvas_to_screen(data.pos);
+                let esc_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+                let font_size = (data.font_size * app.ui.zoom).clamp(6.0, 400.0);
+                egui::Area::new(egui::Id::new("text_tool_editor"))
+                    .fixed_pos(screen_pos)
+                    .order(egui::Order::Foreground)
+                    .show(ctx, |ui| {
+                        egui::Frame::none()
+                            .inner_margin(egui::Margin::same(2.0))
+                            .show(ui, |ui| {
+                                let response = ui.add(
+                                    egui::TextEdit::multiline(&mut app.ui.text_content)
+                                        .frame(false)
+                                        .text_color(data.color)
+                                        .desired_width((font_size * 12.0).max(120.0))
+                                        .desired_rows(3)
+                                        .font(egui::FontId::proportional(font_size)),
+                                );
+                                response.request_focus();
+
+                                if response.changed() {
+                                    let content = app.ui.text_content.clone();
+                                    app.update_text_edit(
+                                        &content,
+                                        data.font_size,
+                                        &data.font_family,
+                                        data.color,
+                                    );
+                                }
+
+                                let edit_rect = response.rect.expand(3.0);
+                                paint_dashed_rect(
+                                    &painter,
+                                    edit_rect,
+                                    Stroke::new(
+                                        1.0_f32,
+                                        Color32::from_rgba_unmultiplied(80, 160, 220, 180),
+                                    ),
+                                );
+
+                                let commit_pressed = ctx.input(|input| {
+                                    input.key_pressed(egui::Key::Enter)
+                                        && input.modifiers.command
+                                });
+                                if esc_pressed || commit_pressed {
+                                    app.commit_text_editor();
+                                    ctx.memory_mut(|memory| {
+                                        memory.surrender_focus(response.id);
+                                    });
+                                }
+                            });
+                    });
+            }
+        }
+
+        // 8. Overlay selezione attiva
         let display_selection = app
             .moving_selection
             .as_ref()
@@ -534,6 +615,32 @@ pub fn show_canvas(app: &mut EframeApp, ctx: &egui::Context) {
             }
         }
     });
+}
+
+fn paint_dashed_rect(painter: &egui::Painter, rect: Rect, stroke: Stroke) {
+    let dash = 6.0_f32;
+    let gap = 4.0_f32;
+    let draw_dashed_line = |from: Pos2, to: Pos2| {
+        let delta = to - from;
+        let length = delta.length();
+        if length <= 0.0 {
+            return;
+        }
+        let direction = delta / length;
+        let mut distance = 0.0_f32;
+        while distance < length {
+            let end = (distance + dash).min(length);
+            painter.line_segment(
+                [from + direction * distance, from + direction * end],
+                stroke,
+            );
+            distance += dash + gap;
+        }
+    };
+    draw_dashed_line(rect.left_top(), rect.right_top());
+    draw_dashed_line(rect.right_top(), rect.right_bottom());
+    draw_dashed_line(rect.right_bottom(), rect.left_bottom());
+    draw_dashed_line(rect.left_bottom(), rect.left_top());
 }
 
 fn paint_scrollbar(

@@ -373,12 +373,7 @@ impl PaintApp {
         RenderedImage::new(self.width, self.height, image.as_raw().to_vec())
     }
 
-    fn save_rendered(
-        &mut self,
-        path: &str,
-        options: ExportOptions,
-        notices: &mut Vec<String>,
-    ) {
+    fn save_rendered(&mut self, path: &str, options: ExportOptions, notices: &mut Vec<String>) {
         let rendered = match self.render_for_export() {
             Ok(rendered) => rendered,
             Err(error) => {
@@ -387,9 +382,7 @@ impl PaintApp {
                 return;
             }
         };
-        if let Err(error) =
-            ExportManager::new().export_rendered(path, &rendered, options)
-        {
+        if let Err(error) = ExportManager::new().export_rendered(path, &rendered, options) {
             eprintln!("Errore durante il salvataggio: {}", error);
             notices.push(format!("Errore salvataggio: {}", error));
         } else {
